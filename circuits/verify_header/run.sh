@@ -11,7 +11,9 @@ set -e
 
 # Download the powers of tau file from here: https://github.com/iden3/snarkjs#7-prepare-phase-2
 # Move to directory specified below
-PHASE1=../../../powers_of_tau/powersOfTau28_hez_final_27.ptau
+# PHASE1=../../../powers_of_tau/powersOfTau28_hez_final_27.ptau
+PHASE1=../../auxiliary/powersOfTau28_hez_final_27.ptau
+
 
 BASE_CIRCUIT_DIR=./
 BUILD_DIR=$BASE_CIRCUIT_DIR/build
@@ -26,10 +28,14 @@ INPUT_DIR=$BASE_CIRCUIT_DIR/input
 VERIFIER_DIR=$BASE_CIRCUIT_DIR/contract
 
 # A patched node
-NODE_PATH=../../../node/out/Release/node
+# NODE_PATH=../../../node/out/Release/node
+NODE_PATH=../../auxiliary/node
 
 # Rapid snark prover
-PROVER_PATH=../../../rapidsnark/build/prover
+# PROVER_PATH=../../../rapidsnark/build/prover
+
+# PROVER_PATH=../../auxiliary/rapidsnark-linux-x86_64-v0.0.1/bin/prover
+PROVER_PATH=../../auxiliary/rapidsnark-linux-x86_64-v0.0.7/bin/prover
 
 run() {
   echo "SLOT: $SLOT"
