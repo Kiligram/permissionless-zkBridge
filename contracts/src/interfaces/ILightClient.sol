@@ -9,7 +9,8 @@ interface ILightClientGetter {
 
     // function stateRoot(uint64 slot) external view returns (bytes32);
 
-    function executionStateRoot(uint64 slot) external view returns (bytes32);
+    /// @notice MODIFIED: removed `view` from the function signature to allow payment
+    function executionStateRoot(uint64 slot) external payable returns (bytes32);
 }
 
 interface ILightClientSetter {

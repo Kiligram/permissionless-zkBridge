@@ -17,11 +17,6 @@ uint256 constant NEXT_SYNC_COMMITTEE_INDEX = 55;
 uint256 constant EXECUTION_STATE_ROOT_INDEX = 402;
 uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 
-// MY CHANGES
-// uint256 constant COLATERAL = 2 ether;
-// uint256 constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
-// uint256 constant BRIDGE_TIMESLOT_PENALTY = 0.1 ether;
-
 /// @title An on-chain light client for Ethereum
 /// @author iwan.eth
 /// @notice An on-chain light client that complies with the Ethereum light client protocol witch 
@@ -36,133 +31,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
     bytes32 public immutable GENESIS_VALIDATORS_ROOT;
     uint256 public immutable GENESIS_TIME;
     uint256 public immutable SECONDS_PER_SLOT;
-
-    // -------------- MY CHANGES ----------------
-    uint256 public immutable COLATERAL;
-    uint256 public immutable BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
-    uint256 public immutable BRIDGE_TIMESLOT_PENALTY;
-    uint256 public immutable EXECUTION_STATE_ROOT_PRICE;
-    uint256 public immutable SYNC_COMMITTEE_ROOT_PRICE;
-    address public currentProposer;
-    uint256 public currentProposerExpiration;
-
-    // mapping(address => bool) public whitelistMapping;
-    mapping(address => uint256) public relayerToBalance;
-    mapping(uint64 => address) public slotToSubmitter;
-    mapping(uint256 => address) public periodToSubmitter;
-    mapping(bytes32 => address) public syncCommitteeRootToSubmitter;
-    
-    address[] public whitelistArray;
-
-    // constructor(
-    //     uint256 colateral,
-    //     uint256 bridgeBlockProposalTimeslot,
-    //     uint256 bridgeTimeslotPenalty
-    // ) {
-    //     COLATERAL = colateral;
-    //     BRIDGE_BLOCK_PROPOSAL_TIMESLOT = bridgeBlockProposalTimeslot;
-    //     BRIDGE_TIMESLOT_PENALTY = bridgeTimeslotPenalty;
-    // }  
-
-
-    function joinRelayerNetwork(address _address) external payable {
-        require(msg.value == COLATERAL, "Incorrect collateral amount");
-        require(relayerToBalance[_address] > 0, "Address already whitelisted");
-        relayerToBalance[_address] = msg.value;
-        whitelistArray.push(_address);
-
-        // if there is only one relayer, set it as the current proposer
-        if (whitelistArray.length == 1) {
-            currentProposer = _address;
-            currentProposerExpiration = block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
-        }
-    }
-
-    function _removeRelayerFromWhitelist(address _address) internal {
-        require(relayerToBalance[_address] > 0, "Address is not whitelisted");
-        // Efficiently remove the address from the whitelistArray
-        for (uint256 i = 0; i < whitelistArray.length; i++) {
-            if (whitelistArray[i] == _address) {
-                whitelistArray[i] = whitelistArray[whitelistArray.length - 1]; // Replace with the last element
-                whitelistArray.pop(); // Remove the last element
-                break;
-            }
-        }
-
-        // if there are no more relayers in the network, set the current proposer to 0
-        if(whitelistArray.length == 0) {
-            currentProposer = address(0);
-        }            
-    }
-
-    function exitRelayerNetwork() external {
-        // if the relayer is the current proposer, it cannot exit
-        // however, if the relayer is the only one in the network, it can exit
-        require(msg.sender != currentProposer || whitelistArray.length == 1, "Cannot exit while being a proposer");
-
-        _removeRelayerFromWhitelist(msg.sender);
-
-        // send back what is left from collateral
-        payable(msg.sender).transfer(relayerToBalance[msg.sender]);
-        relayerToBalance[msg.sender] = 0;
-    }   
-
-    function _chooseRandomProposer() internal {
-        require(whitelistArray.length > 0, "There are no participants yet");
-
-        // Combine multiple sources of pseudo-randomness
-        uint256 randomSeed = uint256(
-            keccak256(
-                abi.encodePacked(
-                    block.timestamp,                // Current block timestamp
-                    blockhash(block.number - 1),    // Previous block hash
-                    headSlot,                       // Latest finalized slot
-                    address(this).balance,          // Contract balance is changed often
-                    currentProposer
-                )
-            )
-        );
-
-        // Use the random seed to select an index in the array
-        currentProposer = whitelistArray[randomSeed % whitelistArray.length];
-        currentProposerExpiration = block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
-    }
-
-    function rechooseInactiveProposer() external {
-        require(currentProposerExpiration < block.timestamp, "Proposer's time is not out yet");
-        // proposer cannot report itself because otherwise it will get its own punishment fine as incentive
-        require(msg.sender != currentProposer, "Proposer cannot report themselves");
-        
-        if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
-            // if remaining colateral is less than penalty, remove the relayer from whitelist for being inactive
-            _removeRelayerFromWhitelist(currentProposer);
-            payable(msg.sender).transfer(relayerToBalance[currentProposer]);
-        }
-        else {
-            relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
-            payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
-        }
-
-        if (whitelistArray.length != 0) {
-            _chooseRandomProposer();
-        }
-        
-    }
-
-    modifier onlyProposer() {
-        require(msg.sender == currentProposer, "Only proposer can call this function");
-        _;
-    }
-
-    // TODO: reentrancy check
-    function withdrawIncentive() external {
-        require(relayerToBalance[msg.sender] > COLATERAL, "No incentive to withdraw");
-        
-        payable(msg.sender).transfer(relayerToBalance[msg.sender] - COLATERAL);
-        relayerToBalance[msg.sender] = COLATERAL; // Reset the balance to the collateral amount
-    }
-
-    // ------------------------------------------ 
 
     bool public active;
     bytes4 public defaultForkVersion;
@@ -185,12 +53,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         bytes4 forkVersion,
         uint256 startSyncCommitteePeriod,
         bytes32 startSyncCommitteeRoot,
-        bytes32 startSyncCommitteePoseidon,
-        uint256 colateral,
-        uint256 bridgeBlockProposalTimeslot,
-        uint256 bridgeTimeslotPenalty,
-        uint256 syncCommitteeRootPrice,
-        uint256 executionStateRootPrice
+        bytes32 startSyncCommitteePoseidon
     ) {
         GENESIS_VALIDATORS_ROOT = genesisValidatorsRoot;
         GENESIS_TIME = genesisTime;
@@ -200,25 +63,18 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         _syncCommitteeRootByPeriod[startSyncCommitteePeriod] = startSyncCommitteeRoot;
         _syncCommitteeRootToPoseidon[startSyncCommitteeRoot] = startSyncCommitteePoseidon;
         active = true;
-        COLATERAL = colateral;
-        BRIDGE_BLOCK_PROPOSAL_TIMESLOT = bridgeBlockProposalTimeslot;
-        BRIDGE_TIMESLOT_PENALTY = bridgeTimeslotPenalty;
-        EXECUTION_STATE_ROOT_PRICE = executionStateRootPrice;
-        SYNC_COMMITTEE_ROOT_PRICE = syncCommitteeRootPrice;
     }
 
-    /// @notice MODIFIED: Added modifier
     /// @notice Updates the execution state root given a finalized light client update
     /// @dev The primary conditions for this are:
     ///      1) At least 2n/3+1 signatures from the current sync committee where n = 512
     ///      2) A valid merkle proof for the finalized header inside the currently attested header
     /// @param update a parameter just like in doxygen (must be followed by parameter name)
-    function updateHeader(HeaderUpdate calldata update) external override isActive onlyProposer {
+    function updateHeader(HeaderUpdate calldata update) external override isActive {
         _verifyHeader(update);
         _updateHeader(update);
     }
 
-    /// @notice MODIFIED: Added modifier, added syncCommitteeRootToSubmitter and periodToSubmitter mapping
     /// @notice Update the sync committee, it contains two updates actually: 
     ///         1. syncCommitteePoseidon
     ///         2. a header
@@ -233,7 +89,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         HeaderUpdate calldata update,
         bytes32 nextSyncCommitteePoseidon,
         Groth16Proof calldata commitmentMappingProof
-    ) external override isActive onlyProposer {
+    ) external override isActive {
         _verifyHeader(update);
         _updateHeader(update);
 
@@ -251,10 +107,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
 
         latestSyncCommitteePeriod = nextPeriod;
         _syncCommitteeRootByPeriod[nextPeriod] = update.nextSyncCommitteeRoot;
-
-        periodToSubmitter[nextPeriod] = msg.sender;
-        syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
-
         emit SyncCommitteeUpdated(nextPeriod, update.nextSyncCommitteeRoot);
     }
 
@@ -323,13 +175,11 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         );
     }
 
-    /// @notice MODIFIED: Added note, _chooseRandomProposer and slotToSubmitter
     function _updateHeader(HeaderUpdate calldata headerUpdate) internal {
         require(
             headerUpdate.finalizedHeader.slot > headSlot, 
             "Update slot must be greater than the current head"
         );
-        // MY NOTE: maybe this will needed to be removed, because once the current slot is missed, the state will be stuck
         require(
             headerUpdate.finalizedHeader.slot <= _getCurrentSlot(), 
             "Update slot is too far in the future"
@@ -340,20 +190,11 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         _slot2block[headerUpdate.finalizedHeader.slot] = headerUpdate.blockNumber;
         _executionStateRoots[headerUpdate.finalizedHeader.slot] = headerUpdate.executionStateRoot;
 
-        // ADDED
-        // choose next block header proposer after the block header was updated
-        _chooseRandomProposer();
-
-        // link the block to the submitter, so that they would accumulate the incentive
-        slotToSubmitter[headerUpdate.finalizedHeader.slot] = msg.sender;
-        //----
-
         emit HeaderUpdated(
             headerUpdate.finalizedHeader.slot, 
             headerUpdate.blockNumber, 
             headerUpdate.executionStateRoot
         );
-
     }
 
     /// @notice Maps a simple serialize merkle root to a poseidon merkle root with a zkSNARK. 
@@ -426,39 +267,19 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         return _slot2block[_slot];
     }
 
-    /// @notice MODIFIED: state root require and set a fee
-    function syncCommitteeRootByPeriod(uint256 _period) external payable returns (bytes32) {
-        require(_syncCommitteeRootByPeriod[_period] != bytes32(0), "Sync committee root not found for this period");
-        require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
-
-        // relayer who submitted the requested sync committee root will get the fee
-        relayerToBalance[periodToSubmitter[_period]] += msg.value;
-
+    function syncCommitteeRootByPeriod(uint256 _period) external view returns (bytes32) {
         return _syncCommitteeRootByPeriod[_period];
     }
 
-    /// @notice MODIFIED: state root require and set a fee
-    function syncCommitteeRootToPoseidon(bytes32 _root) external payable returns (bytes32) {
-        require(_syncCommitteeRootToPoseidon[_root] != bytes32(0), "Poseidon sync committee root not found for this sync committee root");
-        require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
-
-        // relayer who submitted the requested sync committee root will get the fee
-        relayerToBalance[syncCommitteeRootToSubmitter[_root]] += msg.value;
-
+    function syncCommitteeRootToPoseidon(bytes32 _root) external view returns (bytes32) {
         return _syncCommitteeRootToPoseidon[_root];
     }
 
-    /// @notice MODIFIED: state root require and set a fee
     /// @notice A view function that allows you to get an executionStateRoot from a valid header
     /// @dev The executionStateRoot can be used to verify that if something happened on the source chain
     /// @param slot The slot corresponding to the executionStateRoot
     /// @return bytes32 Return the executionStateRoot corresponding to the slot
-    function executionStateRoot(uint64 slot) external payable override returns (bytes32) {
-        require(_executionStateRoots[slot] != bytes32(0), "Execution state root not found for this slot");
-        require(msg.value == EXECUTION_STATE_ROOT_PRICE, "Incorrect fee for execution state root");
-        // relayer who submitted the requested state root will get the fee
-        relayerToBalance[slotToSubmitter[slot]] += msg.value;
-
+    function executionStateRoot(uint64 slot) external override view returns (bytes32) {
         return _executionStateRoots[slot];
     }
 }

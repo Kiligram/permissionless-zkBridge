@@ -14,12 +14,15 @@ wget https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_27.ptau
 
 Install rust and circom
 ```
+cd ~
 apt update
-apt install build-essential
+apt install build-essential -y
+apt install cmake -y
 curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf | sh
 . "$HOME/.cargo/env"
-git clone https://github.com/iden3/circom.git
-cd circom
+wget https://github.com/iden3/circom/archive/refs/tags/v2.0.3.zip
+unzip v2.0.3.zip
+cd circom-2.0.3
 cargo build --release
 cargo install --path circom
 circom --help
@@ -36,7 +39,7 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.37.2/install.sh | bash
 source ~/.bashrc
 nvm install v14.8.0
 node --version
-npm install 
+npm install --unsafe-perm
 ```
 
 
