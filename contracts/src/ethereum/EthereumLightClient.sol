@@ -1,7 +1,7 @@
 pragma solidity 0.8.14;
 pragma experimental ABIEncoderV2;
 
-import "openzeppelin-contracts/contracts/access/Ownable.sol";
+// import "openzeppelin-contracts/contracts/access/Ownable.sol";
 import "./libraries/HeaderBLSVerifier.sol";
 import "./libraries/SyncCommitteeRootToPoseidonVerifier.sol";
 import "./libraries/SimpleSerialize.sol";
@@ -17,12 +17,6 @@ uint256 constant NEXT_SYNC_COMMITTEE_INDEX = 55;
 uint256 constant EXECUTION_STATE_ROOT_INDEX = 402;
 uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 
-// incentive settings
-uint256 constant COLATERAL = 2 ether;
-uint256 constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
-uint256 constant BRIDGE_TIMESLOT_PENALTY = 0.2 ether; // 0.2 ether = 10% penalty
-uint256 constant EXECUTION_STATE_ROOT_PRICE = 0.01 ether;
-uint256 constant SYNC_COMMITTEE_ROOT_PRICE = 0.01 ether;
 
 /// @title An on-chain light client for Ethereum
 /// @author iwan.eth
@@ -34,7 +28,8 @@ uint256 constant SYNC_COMMITTEE_ROOT_PRICE = 0.01 ether;
 ///      costs because of the gas, but there is a lot of complex computational logic in ethereum 
 ///      consensus specs that cannot even be run in smart contracts. However, we can use zkSnarks 
 ///      technology to calculate complex logic and then verify it in smart contracts.
-contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable {
+// contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable {
+contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
     bytes32 public immutable GENESIS_VALIDATORS_ROOT;
     uint256 public immutable GENESIS_TIME;
     uint256 public immutable SECONDS_PER_SLOT;
@@ -42,6 +37,13 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
     // -------------- MY CHANGES ----------------
     address public currentProposer;
     uint256 public currentProposerExpiration;
+
+    // incentive settings
+    uint256 public constant COLLATERAL = 2 ether;
+    uint256 public constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
+    uint256 public constant BRIDGE_TIMESLOT_PENALTY = 0.2 ether; // 0.2 ether = 10% penalty
+    uint256 public constant EXECUTION_STATE_ROOT_PRICE = 0.01 ether;
+    uint256 public constant SYNC_COMMITTEE_ROOT_PRICE = 0.01 ether;
 
     // mapping(address => bool) public whitelistMapping;
     mapping(address => uint256) public relayerToBalance;
@@ -52,8 +54,8 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
     address[] public whitelistArray;
 
     function joinRelayerNetwork(address _address) external payable {
-        require(msg.value == COLATERAL, "Incorrect collateral amount");
-        require(relayerToBalance[_address] > 0, "Address already whitelisted");
+        require(msg.value == COLLATERAL, "Incorrect collateral amount");
+        require(relayerToBalance[_address] == 0, "Address already whitelisted");
         relayerToBalance[_address] = msg.value;
         whitelistArray.push(_address);
 
@@ -114,38 +116,40 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         currentProposerExpiration = block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
     }
 
-    function rechooseInactiveProposer() external {
-        require(currentProposerExpiration < block.timestamp, "Proposer's time is not out yet");
-        // proposer cannot report itself because otherwise it will get its own punishment fine as incentive
-        require(msg.sender != currentProposer, "Proposer cannot report themselves");
+    // function rechooseInactiveProposer() external {
+    //     require(currentProposerExpiration < block.timestamp, "Proposer's time is not out yet");
+    //     // proposer cannot report itself because otherwise it will get its own punishment fine as incentive
+    //     require(msg.sender != currentProposer, "Proposer cannot report themselves");
         
-        if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
-            // if remaining colateral is less than penalty, remove the relayer from whitelist for being inactive
-            _removeRelayerFromWhitelist(currentProposer);
-            payable(msg.sender).transfer(relayerToBalance[currentProposer]);
-        }
-        else {
-            relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
-            payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
-        }
+    //     if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
+    //         // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
+    //         _removeRelayerFromWhitelist(currentProposer);
+    //         payable(msg.sender).transfer(relayerToBalance[currentProposer]);
+    //     }
+    //     else {
+    //         relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
+    //         payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
+    //     }
 
-        if (whitelistArray.length != 0) {
-            _chooseRandomProposer();
-        }
+    //     if (whitelistArray.length != 0) {
+    //         _chooseRandomProposer();
+    //     }
         
-    }
+    // }
 
+    // proposet has a time slot to propose a block header, if it doesn't do it, it will be penalized
+    // and anyone else can propose a block header instead
     modifier onlyProposer() {
-        require(msg.sender == currentProposer, "Only proposer can call this function");
+        require(msg.sender == currentProposer || currentProposerExpiration < block.timestamp, "Only proposer can call this function");
         _;
     }
 
     // TODO: reentrancy check
     function withdrawIncentive() external {
-        require(relayerToBalance[msg.sender] > COLATERAL, "No incentive to withdraw");
+        require(relayerToBalance[msg.sender] > COLLATERAL, "No incentive to withdraw");
         
-        payable(msg.sender).transfer(relayerToBalance[msg.sender] - COLATERAL);
-        relayerToBalance[msg.sender] = COLATERAL; // Reset the balance to the collateral amount
+        payable(msg.sender).transfer(relayerToBalance[msg.sender] - COLLATERAL);
+        relayerToBalance[msg.sender] = COLLATERAL; // Reset the balance to the collateral amount
     }
 
     // ------------------------------------------ 
@@ -390,13 +394,13 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         return uint64(slot / SLOTS_PER_SYNC_COMMITTEE_PERIOD);
     }
 
-    function setDefaultForkVersion(bytes4 forkVersion) public onlyOwner {
-        defaultForkVersion = forkVersion;
-    }
+    // function setDefaultForkVersion(bytes4 forkVersion) public onlyOwner {
+    //     defaultForkVersion = forkVersion;
+    // }
 
-    function setActive(bool newActive) public onlyOwner {
-        active = newActive;
-    }
+    // function setActive(bool newActive) public onlyOwner {
+    //     active = newActive;
+    // }
 
     function slot2block(uint64 _slot) external view returns (uint64) {
         return _slot2block[_slot];
