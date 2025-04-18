@@ -2,3 +2,4 @@
 circuits/node_modules/
 contracts/exports/address.txt
 .DS_Store
+venv/

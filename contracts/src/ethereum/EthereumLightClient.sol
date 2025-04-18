@@ -17,10 +17,12 @@ uint256 constant NEXT_SYNC_COMMITTEE_INDEX = 55;
 uint256 constant EXECUTION_STATE_ROOT_INDEX = 402;
 uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 
-// MY CHANGES
-// uint256 constant COLATERAL = 2 ether;
-// uint256 constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
-// uint256 constant BRIDGE_TIMESLOT_PENALTY = 0.1 ether;
+// incentive settings
+uint256 constant COLATERAL = 2 ether;
+uint256 constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
+uint256 constant BRIDGE_TIMESLOT_PENALTY = 0.2 ether; // 0.2 ether = 10% penalty
+uint256 constant EXECUTION_STATE_ROOT_PRICE = 0.01 ether;
+uint256 constant SYNC_COMMITTEE_ROOT_PRICE = 0.01 ether;
 
 /// @title An on-chain light client for Ethereum
 /// @author iwan.eth
@@ -38,11 +40,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
     uint256 public immutable SECONDS_PER_SLOT;
 
     // -------------- MY CHANGES ----------------
-    uint256 public immutable COLATERAL;
-    uint256 public immutable BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
-    uint256 public immutable BRIDGE_TIMESLOT_PENALTY;
-    uint256 public immutable EXECUTION_STATE_ROOT_PRICE;
-    uint256 public immutable SYNC_COMMITTEE_ROOT_PRICE;
     address public currentProposer;
     uint256 public currentProposerExpiration;
 
@@ -53,17 +50,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
     mapping(bytes32 => address) public syncCommitteeRootToSubmitter;
     
     address[] public whitelistArray;
-
-    // constructor(
-    //     uint256 colateral,
-    //     uint256 bridgeBlockProposalTimeslot,
-    //     uint256 bridgeTimeslotPenalty
-    // ) {
-    //     COLATERAL = colateral;
-    //     BRIDGE_BLOCK_PROPOSAL_TIMESLOT = bridgeBlockProposalTimeslot;
-    //     BRIDGE_TIMESLOT_PENALTY = bridgeTimeslotPenalty;
-    // }  
-
 
     function joinRelayerNetwork(address _address) external payable {
         require(msg.value == COLATERAL, "Incorrect collateral amount");
@@ -185,12 +171,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         bytes4 forkVersion,
         uint256 startSyncCommitteePeriod,
         bytes32 startSyncCommitteeRoot,
-        bytes32 startSyncCommitteePoseidon,
-        uint256 colateral,
-        uint256 bridgeBlockProposalTimeslot,
-        uint256 bridgeTimeslotPenalty,
-        uint256 syncCommitteeRootPrice,
-        uint256 executionStateRootPrice
+        bytes32 startSyncCommitteePoseidon
     ) {
         GENESIS_VALIDATORS_ROOT = genesisValidatorsRoot;
         GENESIS_TIME = genesisTime;
@@ -200,11 +181,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable 
         _syncCommitteeRootByPeriod[startSyncCommitteePeriod] = startSyncCommitteeRoot;
         _syncCommitteeRootToPoseidon[startSyncCommitteeRoot] = startSyncCommitteePoseidon;
         active = true;
-        COLATERAL = colateral;
-        BRIDGE_BLOCK_PROPOSAL_TIMESLOT = bridgeBlockProposalTimeslot;
-        BRIDGE_TIMESLOT_PENALTY = bridgeTimeslotPenalty;
-        EXECUTION_STATE_ROOT_PRICE = executionStateRootPrice;
-        SYNC_COMMITTEE_ROOT_PRICE = syncCommitteeRootPrice;
     }
 
     /// @notice MODIFIED: Added modifier
