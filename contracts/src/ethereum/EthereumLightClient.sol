@@ -49,7 +49,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
     mapping(address => uint256) public relayerToBalance;
     mapping(uint64 => address) public slotToSubmitter;
     mapping(uint256 => address) public periodToSubmitter;
-    mapping(bytes32 => address) public syncCommitteeRootToSubmitter;
+    mapping(bytes32 => address) internal _syncCommitteeRootToSubmitter;
     
     address[] public whitelistArray;
 
@@ -141,7 +141,22 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
     // and anyone else can propose a block header instead
     modifier onlyProposer() {
         require(msg.sender == currentProposer || currentProposerExpiration < block.timestamp, "Only proposer can call this function");
+        
         _;
+
+        // if the proposer misses its time slot, it will be penalized
+        // and anyone else who proposes a block header will get the penalty from original proposer as incentive
+        if(msg.sender != currentProposer){
+            if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
+                // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
+                _removeRelayerFromWhitelist(currentProposer);
+                payable(msg.sender).transfer(relayerToBalance[currentProposer]);
+            }
+            else {
+                relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
+                payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
+            }
+        }
     }
 
     // TODO: reentrancy check
@@ -233,7 +248,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         _syncCommitteeRootByPeriod[nextPeriod] = update.nextSyncCommitteeRoot;
 
         periodToSubmitter[nextPeriod] = msg.sender;
-        syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
+        _syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
 
         emit SyncCommitteeUpdated(nextPeriod, update.nextSyncCommitteeRoot);
     }
@@ -423,7 +438,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
 
         // relayer who submitted the requested sync committee root will get the fee
-        relayerToBalance[syncCommitteeRootToSubmitter[_root]] += msg.value;
+        relayerToBalance[_syncCommitteeRootToSubmitter[_root]] += msg.value;
 
         return _syncCommitteeRootToPoseidon[_root];
     }

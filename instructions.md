@@ -10,3 +10,17 @@ forge script script/EthereumLightClient.s.sol:DeployLightClient \
 ```
 
 
+```
+export CERTORAKEY=
+sudo apt install openjdk-11-jre-headless
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+solc-select install 0.8.14
+solc-select use 0.8.14
+
+cd contracts/
+certoraRun EthereumLightClient.conf
+
+
+```
