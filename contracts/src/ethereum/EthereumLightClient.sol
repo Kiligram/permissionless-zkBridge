@@ -1,6 +1,7 @@
 pragma solidity 0.8.14;
 pragma experimental ABIEncoderV2;
 
+import "../../lib/openzeppelin-contracts/contracts/security/ReentrancyGuard.sol";
 // import "openzeppelin-contracts/contracts/access/Ownable.sol";
 import "./libraries/HeaderBLSVerifier.sol";
 import "./libraries/SyncCommitteeRootToPoseidonVerifier.sol";
@@ -29,7 +30,7 @@ uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 ///      consensus specs that cannot even be run in smart contracts. However, we can use zkSnarks 
 ///      technology to calculate complex logic and then verify it in smart contracts.
 // contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable {
-contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
+contract EthereumLightClient is ILightClientGetter, ILightClientSetter, ReentrancyGuard  {
     bytes32 public immutable GENESIS_VALIDATORS_ROOT;
     uint256 public immutable GENESIS_TIME;
     uint256 public immutable SECONDS_PER_SLOT;
@@ -83,7 +84,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         }            
     }
 
-    function exitRelayerNetwork() external {
+    function exitRelayerNetwork() external nonReentrant {
         // if the relayer is the current proposer, it cannot exit
         // however, if the relayer is the only one in the network, it can exit
         require(msg.sender != currentProposer || whitelistArray.length == 1, "Cannot exit while being a proposer");
@@ -137,30 +138,35 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         
     // }
 
-    // proposet has a time slot to propose a block header, if it doesn't do it, it will be penalized
+    // proposer has a time slot to propose a block header, if it doesn't do it, it will be penalized
     // and anyone else can propose a block header instead
     modifier onlyProposer() {
         require(msg.sender == currentProposer || currentProposerExpiration < block.timestamp, "Only proposer can call this function");
+        require(relayerToBalance[msg.sender] > 0, "Address is not whitelisted");
         
         _;
 
         // if the proposer misses its time slot, it will be penalized
-        // and anyone else who proposes a block header will get the penalty from original proposer as incentive
+        // and anyone from relayers who proposes a block header will get the penalty from original proposer as incentive
         if(msg.sender != currentProposer){
-            if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
+            if (relayerToBalance[currentProposer] <= BRIDGE_TIMESLOT_PENALTY) {
                 // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
                 _removeRelayerFromWhitelist(currentProposer);
-                payable(msg.sender).transfer(relayerToBalance[currentProposer]);
+                relayerToBalance[msg.sender] += relayerToBalance[currentProposer];
+                relayerToBalance[currentProposer] = 0;
             }
             else {
                 relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
-                payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
+                relayerToBalance[msg.sender] += BRIDGE_TIMESLOT_PENALTY;
             }
         }
+
+        // choose next block header proposer after the block header was updated
+        _chooseRandomProposer();
     }
 
     // TODO: reentrancy check
-    function withdrawIncentive() external {
+    function withdrawIncentive() external nonReentrant {
         require(relayerToBalance[msg.sender] > COLLATERAL, "No incentive to withdraw");
         
         payable(msg.sender).transfer(relayerToBalance[msg.sender] - COLLATERAL);
@@ -169,7 +175,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
 
     // ------------------------------------------ 
 
-    bool public active;
     bytes4 public defaultForkVersion;
     uint64 public headSlot;
     uint64 public headBlockNumber;
@@ -199,7 +204,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         latestSyncCommitteePeriod = startSyncCommitteePeriod;
         _syncCommitteeRootByPeriod[startSyncCommitteePeriod] = startSyncCommitteeRoot;
         _syncCommitteeRootToPoseidon[startSyncCommitteeRoot] = startSyncCommitteePoseidon;
-        active = true;
     }
 
     /// @notice MODIFIED: Added modifier
@@ -208,7 +212,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
     ///      1) At least 2n/3+1 signatures from the current sync committee where n = 512
     ///      2) A valid merkle proof for the finalized header inside the currently attested header
     /// @param update a parameter just like in doxygen (must be followed by parameter name)
-    function updateHeader(HeaderUpdate calldata update) external override isActive onlyProposer {
+    function updateHeader(HeaderUpdate calldata update) external override onlyProposer {
         _verifyHeader(update);
         _updateHeader(update);
     }
@@ -228,7 +232,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         HeaderUpdate calldata update,
         bytes32 nextSyncCommitteePoseidon,
         Groth16Proof calldata commitmentMappingProof
-    ) external override isActive onlyProposer {
+    ) external override onlyProposer {
         _verifyHeader(update);
         _updateHeader(update);
 
@@ -251,11 +255,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         _syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
 
         emit SyncCommitteeUpdated(nextPeriod, update.nextSyncCommitteeRoot);
-    }
-
-    modifier isActive {
-        require(active, "Light client must be active");
-        _;
     }
 
     /// @notice Verify a new header come from source chain
@@ -336,9 +335,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
         _executionStateRoots[headerUpdate.finalizedHeader.slot] = headerUpdate.executionStateRoot;
 
         // ADDED
-        // choose next block header proposer after the block header was updated
-        _chooseRandomProposer();
-
         // link the block to the submitter, so that they would accumulate the incentive
         slotToSubmitter[headerUpdate.finalizedHeader.slot] = msg.sender;
         //----
@@ -411,10 +407,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter {
 
     // function setDefaultForkVersion(bytes4 forkVersion) public onlyOwner {
     //     defaultForkVersion = forkVersion;
-    // }
-
-    // function setActive(bool newActive) public onlyOwner {
-    //     active = newActive;
     // }
 
     function slot2block(uint64 _slot) external view returns (uint64) {
