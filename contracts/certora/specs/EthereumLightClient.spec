@@ -79,7 +79,7 @@ rule onlyCertainFunctionsCanChangeContractBalance(method f) {
 // powerful invariant that verifies that the contract has always a balance enough to pay all the relayers
 // it proves the integrity of funds
 ghost mathint totalCollateralBalance {
-    init_state axiom totalCollateralBalance == 0;
+    init_state axiom totalCollateralBalance == nativeBalances[currentContract];
 }
 
 hook Sstore relayerToBalance[KEY address relayer]
