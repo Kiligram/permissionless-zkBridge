@@ -51,18 +51,19 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     mapping(uint64 => address) public slotToSubmitter;
     mapping(uint256 => address) public periodToSubmitter;
     mapping(bytes32 => address) internal _syncCommitteeRootToSubmitter;
+    mapping(address => uint256) public relayerToIncentive;
     
     address[] public whitelistArray;
 
-    function joinRelayerNetwork(address _address) external payable {
+    function joinRelayerNetwork() external payable {
         require(msg.value == COLLATERAL, "Incorrect collateral amount");
-        require(relayerToBalance[_address] == 0, "Address already whitelisted");
-        relayerToBalance[_address] = msg.value;
-        whitelistArray.push(_address);
+        require(relayerToBalance[msg.sender] == 0, "Address already whitelisted");
+        relayerToBalance[msg.sender] = msg.value;
+        whitelistArray.push(msg.sender);
 
         // if there is only one relayer, set it as the current proposer
         if (whitelistArray.length == 1) {
-            currentProposer = _address;
+            currentProposer = msg.sender;
             currentProposerExpiration = block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
         }
     }
@@ -76,12 +77,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
                 whitelistArray.pop(); // Remove the last element
                 break;
             }
-        }
-
-        // if there are no more relayers in the network, set the current proposer to 0
-        if(whitelistArray.length == 0) {
-            currentProposer = address(0);
-        }            
+        }      
     }
 
     function exitRelayerNetwork() external nonReentrant {
@@ -91,13 +87,21 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
 
         _removeRelayerFromWhitelist(msg.sender);
 
+        // if there are no more relayers in the network, set the current proposer to 0
+        if(whitelistArray.length == 0) {
+            currentProposer = address(0);
+        }      
+
         // send back what is left from collateral
         payable(msg.sender).transfer(relayerToBalance[msg.sender]);
         relayerToBalance[msg.sender] = 0;
     }   
 
     function _chooseRandomProposer() internal {
-        require(whitelistArray.length > 0, "There are no participants yet");
+        if (whitelistArray.length == 0) {
+            currentProposer = address(0);
+            return;
+        }
 
         // Combine multiple sources of pseudo-randomness
         uint256 randomSeed = uint256(
@@ -167,10 +171,10 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
 
     // TODO: reentrancy check
     function withdrawIncentive() external nonReentrant {
-        require(relayerToBalance[msg.sender] > COLLATERAL, "No incentive to withdraw");
+        require(relayerToIncentive[msg.sender] > COLLATERAL, "No incentive to withdraw");
         
-        payable(msg.sender).transfer(relayerToBalance[msg.sender] - COLLATERAL);
-        relayerToBalance[msg.sender] = COLLATERAL; // Reset the balance to the collateral amount
+        payable(msg.sender).transfer(relayerToIncentive[msg.sender]);
+        relayerToIncentive[msg.sender] = 0; // Reset the incentive balance to 0
     }
 
     // ------------------------------------------ 
@@ -204,6 +208,9 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         latestSyncCommitteePeriod = startSyncCommitteePeriod;
         _syncCommitteeRootByPeriod[startSyncCommitteePeriod] = startSyncCommitteeRoot;
         _syncCommitteeRootToPoseidon[startSyncCommitteeRoot] = startSyncCommitteePoseidon;
+
+        periodToSubmitter[startSyncCommitteePeriod] = msg.sender;
+        _syncCommitteeRootToSubmitter[startSyncCommitteeRoot] = msg.sender;
     }
 
     /// @notice MODIFIED: Added modifier
@@ -419,7 +426,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
 
         // relayer who submitted the requested sync committee root will get the fee
-        relayerToBalance[periodToSubmitter[_period]] += msg.value;
+        _distributeIncentive(periodToSubmitter[_period]);
 
         return _syncCommitteeRootByPeriod[_period];
     }
@@ -430,9 +437,30 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
 
         // relayer who submitted the requested sync committee root will get the fee
-        relayerToBalance[_syncCommitteeRootToSubmitter[_root]] += msg.value;
+        _distributeIncentive(_syncCommitteeRootToSubmitter[_root]);
 
         return _syncCommitteeRootToPoseidon[_root];
+    }
+
+    function _distributeIncentive(address relayer) internal {
+        if (relayerToBalance[relayer] == 0) {
+            relayerToIncentive[relayer] += msg.value;
+        }
+        else {
+            uint256 excess = 0;
+
+            // Add the msg.value to the relayer's balance
+            relayerToBalance[relayer] += msg.value;
+
+            // Check if the balance exceeds the collateral
+            if (relayerToBalance[relayer] > COLLATERAL) {
+                excess = relayerToBalance[relayer] - COLLATERAL;
+
+                // Move the excess to the incentive balance
+                relayerToBalance[relayer] = COLLATERAL;
+                relayerToIncentive[relayer] += excess;
+            }
+        }
     }
 
     /// @notice MODIFIED: state root require and set a fee
@@ -443,8 +471,9 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     function executionStateRoot(uint64 slot) external payable override returns (bytes32) {
         require(_executionStateRoots[slot] != bytes32(0), "Execution state root not found for this slot");
         require(msg.value == EXECUTION_STATE_ROOT_PRICE, "Incorrect fee for execution state root");
+        
         // relayer who submitted the requested state root will get the fee
-        relayerToBalance[slotToSubmitter[slot]] += msg.value;
+        _distributeIncentive(slotToSubmitter[slot]);
 
         return _executionStateRoots[slot];
     }
