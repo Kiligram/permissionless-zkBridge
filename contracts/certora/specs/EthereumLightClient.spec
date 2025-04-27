@@ -1,7 +1,7 @@
 methods
 {
-    // // When a function is not using the environment (e.g., `msg.sender`), it can be
-    // // declared as `envfree`
+    // When a function is not using the environment (e.g., `msg.sender`), it can be
+    // declared as `envfree`
     // function joinRelayerNetwork(address) external payable;
     // function allowance(address,address) external returns(uint) envfree;
     function COLLATERAL() external returns (uint256) envfree;
@@ -9,6 +9,7 @@ methods
     function SYNC_COMMITTEE_ROOT_PRICE() external returns (uint256) envfree;
     function BRIDGE_TIMESLOT_PENALTY() external returns (uint256) envfree;
     function EXECUTION_STATE_ROOT_PRICE() external returns (uint256) envfree;
+    function BRIDGE_BLOCK_PROPOSAL_TIMESLOT() external returns (uint256) envfree;
 
     /**
      * The following functions are used to verify the zk-SNARK proofs. For certora it is impossible to assume
@@ -21,7 +22,6 @@ methods
 
 // a cvl function for precondition assumptions 
 function setup(env e){
-    // require(e.msg.value == COLLATERAL()); // we do not need this because certora ignores reverted transactions, since such a state is not reachable and there is no reason to check it
     require e.msg.sender != currentContract;
     require e.msg.sender != 0;
     require currentContract.whitelistArray.length < max_uint256;
@@ -87,6 +87,34 @@ rule exitRelayerNetworkUnitTest(){
     // TODO: check that the relayer is removed from the whitelist array, but it is needed to add that there are no duplicates in the whitelist array
 }
 
+
+function assertIncentive(
+    mathint relayer_incentive_before,
+    mathint relayer_collateral_before,
+    mathint relayer_incentive_after,
+    mathint relayer_collateral_after,
+    mathint incentive_to_distribute
+) {
+    mathint excess = relayer_collateral_before + incentive_to_distribute - COLLATERAL();
+
+    if (relayer_collateral_before == 0) {
+        assert relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + incentive_to_distribute,
+            "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";        
+    }
+    else {
+        assert excess > 0 => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
+            
+
+        assert excess == 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
+
+        
+        assert excess < 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + incentive_to_distribute),
+            "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
+    }
+}
+
 // relayerToBalance[periodToSubmitter[_period]] += msg.value;
 rule syncCommitteeRootByPeriodUnitTest(uint256 _period){
     env e;
@@ -123,23 +151,6 @@ rule syncCommitteeRootByPeriodUnitTest(uint256 _period){
         assert excess < 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE()),
             "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
     }
-
-
-    // assert relayer_collateral_before == 0 => (relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + SYNC_COMMITTEE_ROOT_PRICE()),
-    //     "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";
-
-    // assert (relayer_collateral_before != 0 && excess > 0) => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
-    //     "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
-        
-
-    // assert (relayer_collateral_before != 0 && excess == 0) => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
-    //     "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
-
-    
-    // assert (relayer_collateral_before != 0 && excess < 0) => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE()),
-    //     "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";
-
-    // assert relayer_collateral_before < COLLATERAL() => relayer_collateral_after == relayer_collateral_before
 }
 
 
@@ -216,6 +227,161 @@ rule executionStateRootUnitTest(uint64 slot){
             "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
     }
 }
+
+
+rule updateHeaderUnitTest(EthereumLightClient.HeaderUpdate headerUpdate){
+    env e;
+    setup(e);
+
+    updateHeader(e, headerUpdate);
+
+    assert currentContract.headSlot == headerUpdate.finalizedHeader.slot,
+        "Head slot must be updated to the new slot";
+    
+    assert currentContract.headBlockNumber == headerUpdate.blockNumber,
+        "Head block number must be updated to the new block number";
+    
+    assert currentContract._slot2block[headerUpdate.finalizedHeader.slot] == headerUpdate.blockNumber,
+        "There must be added the block number for the given slot";
+    
+    assert currentContract._executionStateRoots[headerUpdate.finalizedHeader.slot] == headerUpdate.executionStateRoot,
+        "There must be added the execution state root for the given slot";
+
+    assert currentContract.slotToSubmitter[headerUpdate.finalizedHeader.slot] == e.msg.sender,
+        "The submitter of the header must be added to the list for incentivization";
+}
+
+
+rule updateSyncCommitteeUnitTest(EthereumLightClient.HeaderUpdate headerUpdate, bytes32 nextSyncCommitteePoseidon, EthereumLightClient.Groth16Proof proof){
+    env e;
+    setup(e);
+
+    updateSyncCommittee(e, headerUpdate, nextSyncCommitteePoseidon, proof);
+
+    // headerUpdate test
+    assert currentContract.headSlot == headerUpdate.finalizedHeader.slot,
+        "Head slot must be updated to the new slot";
+    
+    assert currentContract.headBlockNumber == headerUpdate.blockNumber,
+        "Head block number must be updated to the new block number";
+    
+    assert currentContract._slot2block[headerUpdate.finalizedHeader.slot] == headerUpdate.blockNumber,
+        "There must be added the block number for the given slot";
+    
+    assert currentContract._executionStateRoots[headerUpdate.finalizedHeader.slot] == headerUpdate.executionStateRoot,
+        "There must be added the execution state root for the given slot";
+
+    assert currentContract.slotToSubmitter[headerUpdate.finalizedHeader.slot] == e.msg.sender,
+        "The submitter of the header must be added to the list for incentivization";
+    // headerUpdate test end
+
+    // verifying the sync committee roots submission
+    uint256 SLOTS_PER_SYNC_COMMITTEE_PERIOD = 8192;
+    uint256 next_period = assert_uint256((headerUpdate.finalizedHeader.slot / SLOTS_PER_SYNC_COMMITTEE_PERIOD) + 1);
+
+    assert currentContract.latestSyncCommitteePeriod == next_period,
+        "The latest sync committee period must be updated to the new period";
+    
+    assert currentContract._syncCommitteeRootByPeriod[next_period] == headerUpdate.nextSyncCommitteeRoot,
+        "The sync committee root for the next period must be updated to the new root";
+
+    assert currentContract._syncCommitteeRootToPoseidon[headerUpdate.nextSyncCommitteeRoot] == nextSyncCommitteePoseidon,
+        "There must be added the poseidon sync committee root for the given sync committee root";
+
+    assert currentContract.periodToSubmitter[next_period] == e.msg.sender,
+        "The submitter of the sync committee root must be added to the list for incentivization";
+
+    assert currentContract._syncCommitteeRootToSubmitter[headerUpdate.nextSyncCommitteeRoot] == e.msg.sender,
+        "The submitter of the poseidon sync committee root must be added to the list for incentivization";
+
+        // _syncCommitteeRootToPoseidon[syncCommitteeRoot] = syncCommitteePoseidon; done
+    
+        // latestSyncCommitteePeriod = nextPeriod; done 
+        // _syncCommitteeRootByPeriod[nextPeriod] = update.nextSyncCommitteeRoot; done
+
+        // periodToSubmitter[nextPeriod] = msg.sender;
+        // _syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
+}
+
+
+rule onlyProposerModifierPenalizationUnitTest(method f) filtered {
+    f -> f.selector == sig:updateHeader(EthereumLightClient.HeaderUpdate).selector ||  
+         f.selector == sig:updateSyncCommittee(EthereumLightClient.HeaderUpdate, bytes32, EthereumLightClient.Groth16Proof).selector
+} {
+    env e;    
+    setup(e);
+    requireInvariant noDuplicatesInWhitelist();
+    // we assume that the chosen proposer did not manage to submit the header in time, so it will be penalized
+    require e.msg.sender != currentContract.currentProposer;
+
+    calldataarg args;  // Arguments for the method f
+
+    address proposer_before = currentContract.currentProposer;
+    mathint proposer_before_collateral = currentContract.relayerToBalance[proposer_before];
+
+    mathint relayer_incentive_before = currentContract.relayerToIncentive[e.msg.sender];
+    mathint relayer_collateral_before = currentContract.relayerToBalance[e.msg.sender];
+    f(e, args);
+    mathint relayer_incentive_after = currentContract.relayerToIncentive[e.msg.sender];
+    mathint relayer_collateral_after = currentContract.relayerToBalance[e.msg.sender];
+
+    // verifying incentive for the submitter
+    if (proposer_before_collateral <= BRIDGE_TIMESLOT_PENALTY()){
+        assertIncentive(relayer_incentive_before, relayer_collateral_before, relayer_incentive_after, relayer_collateral_after, proposer_before_collateral);
+    }
+    else {
+        assertIncentive(relayer_incentive_before, relayer_collateral_before, relayer_incentive_after, relayer_collateral_after, BRIDGE_TIMESLOT_PENALTY());
+    }
+
+    // verifying penalization for the proposer who missed his timeslot
+    assert (proposer_before_collateral <= BRIDGE_TIMESLOT_PENALTY()) => currentContract.relayerToBalance[proposer_before] == 0,
+        "If the proposer was penalized and removed from the whitelist, then its balance must be 0";
+
+    assert (proposer_before_collateral <= BRIDGE_TIMESLOT_PENALTY()) => !(exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == proposer_before)),
+        "If the proposer was penalized and removed from the whitelist, then it must not be in the whitelist anymore";
+
+    assert (proposer_before_collateral > BRIDGE_TIMESLOT_PENALTY()) => currentContract.relayerToBalance[proposer_before] == 
+        proposer_before_collateral - BRIDGE_TIMESLOT_PENALTY(),
+        "If the proposer was penalized and not removed from the whitelist, then its balance must be decreased by the penalty";
+
+        // if(msg.sender != currentProposer){
+        //     if (relayerToBalance[currentProposer] <= BRIDGE_TIMESLOT_PENALTY) {
+        //         // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
+        //         _removeRelayerFromWhitelist(currentProposer);
+        //         _distributeIncentive(msg.sender, relayerToBalance[currentProposer]);
+        //         // relayerToBalance[msg.sender] += relayerToBalance[currentProposer];
+        //         relayerToBalance[currentProposer] = 0;
+        //     }
+        //     else {
+        //         relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
+        //         _distributeIncentive(msg.sender, BRIDGE_TIMESLOT_PENALTY);
+        //         // relayerToBalance[msg.sender] += BRIDGE_TIMESLOT_PENALTY;
+        //     }
+        // }
+
+
+}
+
+
+rule chooseRandomProposerUnitTest(method f) filtered {
+    f -> f.selector == sig:updateHeader(EthereumLightClient.HeaderUpdate).selector ||  
+         f.selector == sig:updateSyncCommittee(EthereumLightClient.HeaderUpdate, bytes32, EthereumLightClient.Groth16Proof).selector
+} {
+    env e;    
+    setup(e);
+    requireInvariant noDuplicatesInWhitelist();
+
+    calldataarg args;  // Arguments for the method f
+
+    f(e, args);  
+
+    assert currentContract.whitelistArray.length == 0 => currentContract.currentProposer == 0,
+        "If there are no relayers in the whitelist, then the current proposer must be 0";
+
+    assert currentContract.whitelistArray.length != 0 => currentContract.currentProposerExpiration == e.block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT(),
+        "If there are relayers in the whitelist, there must be set expiration time for current proposer";
+}
+
 
 // parametric rule
 rule onlyCertainFunctionsCanChangeContractBalance(method f) {
