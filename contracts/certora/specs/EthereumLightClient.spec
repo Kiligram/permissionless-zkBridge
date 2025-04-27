@@ -8,6 +8,7 @@ methods
     function BRIDGE_BLOCK_PROPOSAL_TIMESLOT() external returns (uint256) envfree;
     function SYNC_COMMITTEE_ROOT_PRICE() external returns (uint256) envfree;
     function BRIDGE_TIMESLOT_PENALTY() external returns (uint256) envfree;
+    function EXECUTION_STATE_ROOT_PRICE() external returns (uint256) envfree;
 
     /**
      * The following functions are used to verify the zk-SNARK proofs. For certora it is impossible to assume
@@ -87,26 +88,134 @@ rule exitRelayerNetworkUnitTest(){
 }
 
 // relayerToBalance[periodToSubmitter[_period]] += msg.value;
-// rule syncCommitteeRootByPeriodUnitTest(uint256 _period){
-//     env e;
-//     setup(e);
-//     // require();
+rule syncCommitteeRootByPeriodUnitTest(uint256 _period){
+    env e;
+    setup(e);
 
-//     mathint relayer_incentive_before = currentContract.relayerToIncentive[currentContract.periodToSubmitter[_period]];
-//     mathint relayer_collateral_before = currentContract.relayerToBalance[currentContract.periodToSubmitter[_period]];
-//     syncCommitteeRootByPeriod(e, _period);
-//     mathint relayer_address = currentContract.periodToSubmitter[_period];
-//     mathint relayer_incentive_after = currentContract.relayerToIncentive[relayer_address];
-//     mathint relayer_collateral_after = currentContract.relayerToBalance[relayer_address];
+    address relayer_address = currentContract.periodToSubmitter[_period];
+    mathint relayer_incentive_before = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_before = currentContract.relayerToBalance[relayer_address];
+    bytes32 return_value = syncCommitteeRootByPeriod(e, _period);
+    mathint relayer_incentive_after = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_after = currentContract.relayerToBalance[relayer_address];
 
-//     assert relayer_collateral_before == COLLATERAL() => relayer_incentive_after == relayer_incentive_before + SYNC_COMMITTEE_ROOT_PRICE(),
-//         "Relayer's incentive balance must increase by the sync committee root price";
+    assert return_value != to_bytes32(0),
+        "Sync committee root cannot be 0";
+    
+    assert return_value == currentContract._syncCommitteeRootByPeriod[_period],
+        "Function must return the sync committee root for the given period";
 
-//     uint256 excess = 
+    mathint excess = relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE() - COLLATERAL();
 
-//     assert relayer_collateral_before < COLLATERAL() => relayer_collateral_after == relayer_collateral_before
-// }
+    if (relayer_collateral_before == 0) {
+        assert relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + SYNC_COMMITTEE_ROOT_PRICE(),
+            "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";        
+    }
+    else {
+        assert excess > 0 => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
+            
 
+        assert excess == 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
+
+        
+        assert excess < 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE()),
+            "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
+    }
+
+
+    // assert relayer_collateral_before == 0 => (relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + SYNC_COMMITTEE_ROOT_PRICE()),
+    //     "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";
+
+    // assert (relayer_collateral_before != 0 && excess > 0) => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
+    //     "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
+        
+
+    // assert (relayer_collateral_before != 0 && excess == 0) => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
+    //     "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
+
+    
+    // assert (relayer_collateral_before != 0 && excess < 0) => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE()),
+    //     "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";
+
+    // assert relayer_collateral_before < COLLATERAL() => relayer_collateral_after == relayer_collateral_before
+}
+
+
+rule syncCommitteeRootToPoseidonUnitTest(bytes32 _root){
+    env e;
+    setup(e);
+
+    address relayer_address = currentContract._syncCommitteeRootToSubmitter[_root];
+    mathint relayer_incentive_before = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_before = currentContract.relayerToBalance[relayer_address];
+    bytes32 return_value = syncCommitteeRootToPoseidon(e, _root);
+    mathint relayer_incentive_after = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_after = currentContract.relayerToBalance[relayer_address];
+
+    assert return_value != to_bytes32(0),
+        "Sync committee root cannot be 0";
+
+    assert return_value == currentContract._syncCommitteeRootToPoseidon[_root],
+        "Function must return the poseidon sync committee root for the given sync committee root";
+
+    mathint excess = relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE() - COLLATERAL();
+
+    if (relayer_collateral_before == 0) {
+        assert relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + SYNC_COMMITTEE_ROOT_PRICE(),
+            "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";        
+    }
+    else {
+        assert excess > 0 => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
+            
+
+        assert excess == 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
+
+        
+        assert excess < 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + SYNC_COMMITTEE_ROOT_PRICE()),
+            "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
+    }
+}
+
+rule executionStateRootUnitTest(uint64 slot){
+    env e;
+    setup(e);
+
+    address relayer_address = currentContract.slotToSubmitter[slot];
+    mathint relayer_incentive_before = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_before = currentContract.relayerToBalance[relayer_address];
+    bytes32 return_value = executionStateRoot(e, slot);
+    mathint relayer_incentive_after = currentContract.relayerToIncentive[relayer_address];
+    mathint relayer_collateral_after = currentContract.relayerToBalance[relayer_address];
+
+    assert return_value != to_bytes32(0),
+        "Sync committee root cannot be 0";
+
+    assert return_value == currentContract._executionStateRoots[slot],
+        "Function must return the execution state root for the given slot";
+
+    mathint excess = relayer_collateral_before + EXECUTION_STATE_ROOT_PRICE() - COLLATERAL();
+
+    if (relayer_collateral_before == 0) {
+        assert relayer_collateral_after == relayer_collateral_before && relayer_incentive_after == relayer_incentive_before + EXECUTION_STATE_ROOT_PRICE(),
+            "When the relayer is not in the whitelist anymore, the relayer's collateral balance must remain zero and the whole incentive must be added to the relayer's incentive balance";        
+    }
+    else {
+        assert excess > 0 => (relayer_incentive_after == relayer_incentive_before + excess && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) exceeds the collateral balance, the rest must go to the incentive balance";
+            
+
+        assert excess == 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == COLLATERAL()),
+            "When the (collateral balance + incentive) is equal to the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must be equal to the collateral";
+
+        
+        assert excess < 0 => (relayer_incentive_after == relayer_incentive_before && relayer_collateral_after == relayer_collateral_before + EXECUTION_STATE_ROOT_PRICE()),
+            "When the (collateral balance + incentive) is less than the collateral, the relayer's incentive balance must not change and the relayer's collateral balance must increase by the sync committee root price";   
+    }
+}
 
 // parametric rule
 rule onlyCertainFunctionsCanChangeContractBalance(method f) {
@@ -249,13 +358,8 @@ invariant thereIsAlwaysSubmitterForExistingExecutionStateRoot(uint64 slot)
 
 // hook Sstore whitelistArray[INDEX uint index]
 //     address newVal (address oldVal) {
-//     if (selector == sig:joinRelayerNetwork().selector) {
-//         addressesInWhitelist[newVal] = addressesInWhitelist[newVal] + 1;
-//     }
-//     else {
-//         addressesInWhitelist[oldVal] = addressesInWhitelist[oldVal] - 1;
-//         addressesInWhitelist[newVal] = addressesInWhitelist[newVal] + 1;
-//     }
+//     addressesInWhitelist[newVal] = addressesInWhitelist[newVal] + 1;
+//     addressesInWhitelist[oldVal] = addressesInWhitelist[oldVal] - 1;
 // }
 
 // hook Sstore whitelistArray.length
