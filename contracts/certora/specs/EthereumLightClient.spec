@@ -103,11 +103,9 @@ invariant totalCollateralEqualsContractBalance()
 
 // the problem is that it just needs to be sure that there are no 2 the same addresses in the whitelist
 invariant zeroAddressCanNotBeInWhitelist()
-    // currentContract.whitelistArray.length > 0 => !(exists uint256 index. currentContract.whitelistArray[index] == 0)
     forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != 0)
     {
         preserved with (env e){
-            // requireInvariant noDuplicatesInWhitelist();
             setup(e);
         }
     }
@@ -141,59 +139,6 @@ invariant thereIsAlwaysSubmitterForExistingExecutionStateRoot(uint64 slot)
         }
     }
 
-    // function syncCommitteeRootByPeriod(uint256 _period) external payable returns (bytes32) {
-    //     require(_syncCommitteeRootByPeriod[_period] != bytes32(0), "Sync committee root not found for this period");
-    //     require(msg.value == SYNC_COMMITTEE_ROOT_PRICE, "Incorrect fee for sync committee root");
-
-    //     // relayer who submitted the requested sync committee root will get the fee
-    //     relayerToBalance[periodToSubmitter[_period]] += msg.value;
-
-    //     return _syncCommitteeRootByPeriod[_period];
-    // }
-
-// invariant thereIsAlwaysSubmitterForExistingSyncCommitteeRootToPoseidon(bytes32 root)
-
-// does not work because certora assumes that the sender can be 0
-// it is possible to rewrite it to parametric rule, so that there would not be the constructor induction base
-// then it would be possible to use require the invariant safely in other rules since we would have it proven
-// invariant thereIsAlwaysSubmitterForExistingPeriod(uint256 _period)
-//     currentContract._syncCommitteeRootByPeriod[_period] != to_bytes32(0) => currentContract.periodToSubmitter[_period] != 0
-//     // currentContract.periodToSubmitter[_period] != 0 <=> currentContract._syncCommitteeRootByPeriod[_period] != to_bytes32(0)
-//     {
-//         preserved with (env e){
-//             setup(e);
-//         }
-//         preserved updateSyncCommittee(EthereumLightClient.HeaderUpdate update, bytes32 nextSyncCommitteePoseidon, EthereumLightClient.Groth16Proof commitmentMappingProof) with (env e){
-//             setup(e);
-//             require update.nextSyncCommitteeRoot != to_bytes32(0);
-//         }
-//     }
-
-
-
-// ghost mapping(address => uint256) addressesInWhitelist{
-//     axiom forall address x. addressesInWhitelist[x] == 0;
-// }
-
-// hook Sstore whitelistArray[INDEX uint index]
-//     address newVal (address oldVal) {
-//     addressesInWhitelist[newVal] = addressesInWhitelist[newVal] + 1;
-//     addressesInWhitelist[oldVal] = addressesInWhitelist[oldVal] - 1;
-// }
-
-// hook Sstore whitelistArray.length
-//     uint newVal (uint oldVal) {
-    
-// }
-
-// invariant noDuplicatesInWhitelist()
-//     (forall address x. addressesInWhitelist[x] == 0) || (forall address x. addressesInWhitelist[x] == 1)
-//     {
-//         preserved with (env e){
-//             setup(e);
-//         }
-//     }
-
 /**
     the problem is that certora assumes there is some relayer in the whitelist, which does not have the collateral
     here we are comparing each element of the whitelist with each other to check that there are no duplicates
@@ -208,47 +153,33 @@ invariant noDuplicatesInWhitelist()
     {
         preserved with (env e){
             setup(e);
-            // requireInvariant isInTheWhiteListIfHasCollateral(_);
         }
         preserved joinRelayerNetwork() with (env e){
             setup(e);
             // here we assume that if there is a relayer in the whitelist, then this relayer has a collateral
             requireInvariant thereIsACollateralIfIsInWhitelist(e.msg.sender);
-            // require (exists uint256 index. currentContract.whitelistArray[index] == e.msg.sender) => currentContract.relayerToBalance[e.msg.sender] > 0;
         }
     }
 
 // double polarity issue is there is <=> therefore we splitted this invariant into two
 invariant thereIsACollateralIfIsInWhitelist(address relayer) 
     (exists uint256 index. index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == relayer) => currentContract.relayerToBalance[relayer] > 0
-    // !(forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != relayer))
     {
         // we make an assumption that the function caller is never the contract itself, because otherwise it would not change the contract balance
         preserved with (env e){ 
             setup(e);
             requireInvariant noDuplicatesInWhitelist();
-            require relayer != currentContract;
-            require relayer != 0;
         }
     }
 
 // the problem is that 
 // is not true, because the relayer has the balance 
 invariant isInTheWhiteListIfHasCollateral(address relayer) 
-    // forall address relayer. (currentContract.relayerToBalance[relayer] > 0 => (exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == relayer)))
-    // forall address relayer. (currentContract.relayerToBalance[relayer] > 0 => !(forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != relayer)))
     currentContract.relayerToBalance[relayer] > 0 => (exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == relayer))
-    // !(forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != relayer))
     {
         // we make an assumption that the function caller is never the contract itself, because otherwise it would not change the contract balance
         preserved with (env e){ 
             setup(e);
-            requireInvariant noDuplicatesInWhitelist();
-            // requireInvariant thereIsACollateralIfIsInWhitelist(relayer);
-            requireInvariant zeroAddressCanNotBeInWhitelist();
-            require BRIDGE_TIMESLOT_PENALTY() > 0;
-            // require relayer != currentContract;
-            // require relayer != 0;
         }
     }
 
@@ -294,7 +225,6 @@ rule withdrawUnitTest(){
     mathint relayer_native_balance_before = nativeBalances[e.msg.sender];
     mathint relayer_incentive = currentContract.relayerToIncentive[e.msg.sender];
     withdrawIncentive(e);
-    // mathint relayer_balance_after = currentContract.relayerToBalance[e.msg.sender];
 
     assert currentContract.relayerToIncentive[e.msg.sender] == 0,
         "Relayer incentive balance must be 0 after withdrawal";
@@ -307,7 +237,6 @@ rule exitRelayerNetworkUnitTest(){
     env e;
     setup(e);
 
-    // assert forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != 0)
     mathint relayer_balance_before = nativeBalances[e.msg.sender];
     mathint relayer_collateral_before = currentContract.relayerToBalance[e.msg.sender];
     exitRelayerNetwork(e);
@@ -349,7 +278,7 @@ function assertIncentive(
     }
 }
 
-// relayerToBalance[periodToSubmitter[_period]] += msg.value;
+
 rule syncCommitteeRootByPeriodUnitTest(uint256 _period){
     env e;
     setup(e);
@@ -653,29 +582,3 @@ rule eachMethodMustHaveNonRevertedPath(method f) {
     satisfy !lastReverted,
         "all methods must have non-reverted path";    
 }
-
-// rule joinRelayerNetworkLiveness(){
-//     env e;
-//     setup(e);
-    
-//     require e.msg.value == COLLATERAL();
-//     require currentContract.relayerToBalance[e.msg.sender] == 0;
-
-//     joinRelayerNetwork@withrevert(e);
-
-//     assert lastReverted,
-//         "joinRelayerNetwork() must not revert if the relayer is not in the whitelist and the send eth value is equal to the collateral";
-// }
-
-// rule exitRelayerNetworkLiveness(){
-//     env e;
-//     setup(e);
-    
-//     require e.msg.sender != 
-//     require currentContract.relayerToBalance[e.msg.sender] == 0;
-
-//     joinRelayerNetwork@withrevert(e);
-
-//     assert lastReverted,
-//         "joinRelayerNetwork() must not revert if the relayer is not in the whitelist and the send eth value is equal to the collateral";
-// }
