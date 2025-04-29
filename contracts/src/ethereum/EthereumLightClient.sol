@@ -415,10 +415,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         return uint64(slot / SLOTS_PER_SYNC_COMMITTEE_PERIOD);
     }
 
-    // function setDefaultForkVersion(bytes4 forkVersion) public onlyOwner {
-    //     defaultForkVersion = forkVersion;
-    // }
-
     function slot2block(uint64 _slot) external view returns (uint64) {
         return _slot2block[_slot];
     }
