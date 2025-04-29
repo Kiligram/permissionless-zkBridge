@@ -131,11 +131,8 @@ def get_sync_committee_root_by_period(period: int):
         })
 
         # Send the transaction
-        send_tx(web3, tx, estimated_gas)
-
-        # Fetch and print the sync committee root
-        sync_committee_root = contract.functions.syncCommitteeRootByPeriod(period).call()
-        print(f"✅ Sync Committee Root for period {period}: {sync_committee_root}")
+        result = send_tx(web3, tx, estimated_gas)
+        print(f"✅ Sync Committee Root for period {period}: 0x{result.hex()}")
     except Exception as e:
         print(f"❌ Failed to call syncCommitteeRootByPeriod: {e}")
 
@@ -283,6 +280,14 @@ def send_tx(web3, tx, estimated_gas):
 
     if receipt.status == 1:
         print("✅ Transaction succeeded!")
+        try:
+            # Attempt to fetch the return value of the called function
+            return_value = web3.eth.call(tx, block_identifier=receipt.blockNumber)
+            if return_value:
+                # print(f"🔄 Return value: {return_value}")
+                return return_value
+        except Exception as e:
+            return True
         return True
     else:
         print("❌ Transaction reverted.")
@@ -401,12 +406,9 @@ def get_sync_committee_root_to_poseidon(root: str):
         })
 
         # Send the transaction
-        send_tx(web3, tx, estimated_gas)
+        result = send_tx(web3, tx, estimated_gas)
 
-        # Fetch and print the result
-        result = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).call()
-        print(f"✅ Sync Committee Root to Poseidon for root {root}: {result}")
-        return result
+        print(f"✅ Sync Committee Root to Poseidon for root {root}: 0x{result.hex()}")
     except Exception as e:
         print(f"❌ Failed to call syncCommitteeRootToPoseidon: {e}")
 
@@ -435,12 +437,9 @@ def get_execution_state_root(slot: int):
         })
 
         # Send the transaction
-        send_tx(web3, tx, estimated_gas)
+        result = send_tx(web3, tx, estimated_gas)
 
-        # Fetch and print the result
-        result = contract.functions.executionStateRoot(slot).call()
-        print(f"✅ Execution State Root for slot {slot}: {result}")
-        return result
+        print(f"✅ Execution State Root for slot {slot}: 0x{result.hex()}")
     except Exception as e:
         print(f"❌ Failed to call executionStateRoot: {e}")
 
@@ -484,6 +483,8 @@ def main():
         get_current_proposer()
     elif args.sync_root_to_poseidon:
         get_sync_committee_root_to_poseidon(args.sync_root_to_poseidon)
+    elif args.execution_state_root:
+        get_execution_state_root(args.execution_state_root)
     else:
         parser.print_help()
     
