@@ -20,7 +20,7 @@ uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 
 
 /// @title An on-chain light client for Ethereum
-/// @author iwan.eth
+/// @author iwan.eth (initial author) | Andrii Rybak (incentive mechanism, formal verification, security update and CLI)
 /// @notice An on-chain light client that complies with the Ethereum light client protocol witch 
 ///         is defined in `https://github.com/ethereum/consensus-specs`, it can be ethereum main 
 ///         net or goerli/sepolia test net.
@@ -29,7 +29,6 @@ uint256 constant BLOCK_NUMBER_ROOT_INDEX = 406;
 ///      costs because of the gas, but there is a lot of complex computational logic in ethereum 
 ///      consensus specs that cannot even be run in smart contracts. However, we can use zkSnarks 
 ///      technology to calculate complex logic and then verify it in smart contracts.
-// contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Ownable {
 contract EthereumLightClient is ILightClientGetter, ILightClientSetter, ReentrancyGuard  {
     bytes32 public immutable GENESIS_VALIDATORS_ROOT;
     uint256 public immutable GENESIS_TIME;
@@ -122,29 +121,8 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         currentProposerExpiration = block.timestamp + BRIDGE_BLOCK_PROPOSAL_TIMESLOT;
     }
 
-    // function rechooseInactiveProposer() external {
-    //     require(currentProposerExpiration < block.timestamp, "Proposer's time is not out yet");
-    //     // proposer cannot report itself because otherwise it will get its own punishment fine as incentive
-    //     require(msg.sender != currentProposer, "Proposer cannot report themselves");
-        
-    //     if (relayerToBalance[currentProposer] < BRIDGE_TIMESLOT_PENALTY) {
-    //         // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
-    //         _removeRelayerFromWhitelist(currentProposer);
-    //         payable(msg.sender).transfer(relayerToBalance[currentProposer]);
-    //     }
-    //     else {
-    //         relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
-    //         payable(msg.sender).transfer(BRIDGE_TIMESLOT_PENALTY);
-    //     }
-
-    //     if (whitelistArray.length != 0) {
-    //         _chooseRandomProposer();
-    //     }
-        
-    // }
-
-    // proposer has a time slot to propose a block header, if it doesn't do it, it will be penalized
-    // and anyone else can propose a block header instead
+    // proposer has a time slot to propose a block header, if it doesn't do it, anyone else from the whitelist can propose it
+    // as a result the proposer who missed their slot will be penalized and the relayer who proposed the block header will get that penalty as incentive
     modifier onlyProposer() {
         require(msg.sender == currentProposer || currentProposerExpiration < block.timestamp, "Only proposer can call this function");
         require(relayerToBalance[msg.sender] > 0, "Address is not whitelisted");
@@ -172,7 +150,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         _chooseRandomProposer();
     }
 
-    // TODO: reentrancy check
     function withdrawIncentive() external nonReentrant {
         require(relayerToIncentive[msg.sender] != 0, "No incentive to withdraw");
         
@@ -261,6 +238,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         latestSyncCommitteePeriod = nextPeriod;
         _syncCommitteeRootByPeriod[nextPeriod] = update.nextSyncCommitteeRoot;
 
+        // Added mapping to track the incentive for the submitter
         periodToSubmitter[nextPeriod] = msg.sender;
         _syncCommitteeRootToSubmitter[update.nextSyncCommitteeRoot] = msg.sender;
 
@@ -441,6 +419,17 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         return _syncCommitteeRootToPoseidon[_root];
     }
 
+
+    /**
+     * @dev Internal function to distribute incentives to a relayer. 
+     *      This function manages the relayer's balance and incentive amounts.
+     *      If the relayer's balance exceeds the predefined collateral limit, 
+     *      the excess amount is moved to the incentive balance.
+     *      It is needed to keep the collateral amount in the relayer's balance, so that it would not be removed from the whitelist
+     *
+     * @param relayer The address of the relayer to whom the incentive is distributed.
+     * @param amount The amount to be added to the relayer's balance or incentive.
+     */
     function _distributeIncentive(address relayer, uint256 amount) internal {
         if (relayerToBalance[relayer] == 0) {
             relayerToIncentive[relayer] += amount;
