@@ -19,6 +19,7 @@ RPC_URL = "http://127.0.0.1:8545"  # Local Anvil by default
 ABI_PATH = "./contracts/out/EthereumLightClient.sol/EthereumLightClient.json"
 # CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
 BROADCAST_PATH = "./contracts/broadcast/EthereumLightClient.s.sol/31337/run-latest.json"
+# this CLI is only for testing purposes, so use a testnet address
 PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 GAS_BUFFER_MULTIPLIER = 1.2
 
@@ -130,7 +131,7 @@ def get_sync_committee_root_by_period(period: int):
         })
 
         # Send the transaction
-        send_tx(web3, tx)
+        send_tx(web3, tx, estimated_gas)
 
         # Fetch and print the sync committee root
         sync_committee_root = contract.functions.syncCommitteeRootByPeriod(period).call()
@@ -216,7 +217,7 @@ def call_update_header():
         "nonce": nonce,
     })
 
-    send_tx(web3, tx)
+    send_tx(web3, tx, estimated_gas)
 
 
 def call_update_sync_committee():
@@ -252,10 +253,13 @@ def call_update_sync_committee():
         "nonce": nonce,
     })
 
-    send_tx(web3, tx)
+    send_tx(web3, tx, estimated_gas)
 
 
-def send_tx(web3, tx):
+def send_tx(web3, tx, estimated_gas):
+    # Get balance before transaction
+    balance_before = web3.eth.get_balance(acct.address)
+
     signed_tx = web3.eth.account.sign_transaction(tx, private_key=PRIVATE_KEY)
     tx_hash = web3.eth.send_raw_transaction(signed_tx.raw_transaction)
 
@@ -263,22 +267,38 @@ def send_tx(web3, tx):
     receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
     print(f"✅ Transaction mined in block {receipt.blockNumber}")
 
+    # Retrieve gas used and calculate ETH spent
+    gas_used = receipt.gasUsed
+    gas_price = tx["gasPrice"]
+    eth_spent = web3.from_wei(gas_used * gas_price, "ether")
+
+    # Get balance after transaction
+    balance_after = web3.eth.get_balance(acct.address)
+
+    print(f"⛽ Gas estimated: {estimated_gas} | Actually used: {gas_used} ({eth_spent} ETH)")
+
+    balance_diff = balance_after - balance_before
+    sign = "+" if balance_diff >= 0 else "-"
+    print(f"💰 Balance before: {web3.from_wei(balance_before, 'ether')} ETH | After: {web3.from_wei(balance_after, 'ether')} ETH | Diff: {sign}{web3.from_wei(abs(balance_diff), 'ether')} ETH")
+
     if receipt.status == 1:
         print("✅ Transaction succeeded!")
+        return True
     else:
         print("❌ Transaction reverted.")
         debug_trace = web3.provider.make_request("debug_traceTransaction", [web3.to_hex(tx_hash)])
         decode_revert_reason(debug_trace)
+        return False
 
 
-def call_join_relayer_network(address):
+def call_join_relayer_network():
     """Calls the joinRelayerNetwork function in the smart contract with the required collateral."""
 
     # Read COLLATERAL value from contract
     collateral = contract.functions.COLLATERAL().call()
 
     # Estimate gas
-    estimated_gas = contract.functions.joinRelayerNetwork(Web3.to_checksum_address(address)).estimate_gas({
+    estimated_gas = contract.functions.joinRelayerNetwork().estimate_gas({
         "from": acct.address,
         "value": collateral,
     })
@@ -286,7 +306,7 @@ def call_join_relayer_network(address):
 
     # Build the transaction with collateral value
     nonce = web3.eth.get_transaction_count(acct.address)
-    tx = contract.functions.joinRelayerNetwork(Web3.to_checksum_address(address)).build_transaction({
+    tx = contract.functions.joinRelayerNetwork().build_transaction({
         "chainId": web3.eth.chain_id,
         "gas": gas_limit,
         "gasPrice": web3.eth.gas_price,
@@ -295,7 +315,10 @@ def call_join_relayer_network(address):
     })
 
     # Send the transaction
-    send_tx(web3, tx)
+    if send_tx(web3, tx, estimated_gas):
+        print(f"✅ Joined relayer {acct.address}")
+
+
 
 
 
@@ -318,7 +341,7 @@ def call_exit_relayer_network():
     })
 
     # Send the transaction
-    send_tx(web3, tx)
+    send_tx(web3, tx, estimated_gas)
 
 
 def call_withdraw_incentive():
@@ -340,7 +363,7 @@ def call_withdraw_incentive():
     })
 
     # Send the transaction
-    send_tx(web3, tx)
+    send_tx(web3, tx, estimated_gas)
 
 
 def get_current_proposer():
@@ -378,7 +401,7 @@ def get_sync_committee_root_to_poseidon(root: str):
         })
 
         # Send the transaction
-        send_tx(web3, tx)
+        send_tx(web3, tx, estimated_gas)
 
         # Fetch and print the result
         result = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).call()
@@ -412,7 +435,7 @@ def get_execution_state_root(slot: int):
         })
 
         # Send the transaction
-        send_tx(web3, tx)
+        send_tx(web3, tx, estimated_gas)
 
         # Fetch and print the result
         result = contract.functions.executionStateRoot(slot).call()
@@ -428,9 +451,9 @@ def main():
     parser = argparse.ArgumentParser(description="zkBridge Proof Submission CLI")
     parser.add_argument("-s", "--submit", help='Run submission scripts: "header" or "sync"', choices=["header", "sync"])
     parser.add_argument("--prepare-json", action="store_true", help="Fetch block header and write input JSON")
-    parser.add_argument("-b", "--balance", type=str, help="Check ETH balance of an address")
+    parser.add_argument("-b", "--balance", nargs="?", const=acct.address, type=str, help="Check ETH balance of an address (defaults to your account)")
     
-    parser.add_argument("--join-relayer", type=str, metavar="ADDRESS", help="Join the relayer network with the given address")
+    parser.add_argument("--join-relayer", action="store_true", help="Join the relayer network")
     parser.add_argument("--exit-relayer", action="store_true", help="Exit the relayer network")
     parser.add_argument("--withdraw-incentive", action="store_true", help="Withdraw incentive from the contract")
 
@@ -452,7 +475,7 @@ def main():
     elif args.get_sync_root:
         get_sync_committee_root_by_period(args.get_sync_root)
     elif args.join_relayer:
-        call_join_relayer_network(args.join_relayer)
+        call_join_relayer_network()
     elif args.exit_relayer:
         call_exit_relayer_network()
     elif args.withdraw_incentive:
@@ -461,7 +484,6 @@ def main():
         get_current_proposer()
     elif args.sync_root_to_poseidon:
         get_sync_committee_root_to_poseidon(args.sync_root_to_poseidon)
-    
     else:
         parser.print_help()
     
