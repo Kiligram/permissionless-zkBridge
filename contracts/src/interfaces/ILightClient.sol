@@ -8,6 +8,8 @@ interface ILightClientGetter {
     // function headers(uint64 slot) external view returns (BeaconBlockHeader memory);
 
     // function stateRoot(uint64 slot) external view returns (bytes32);
+    function syncCommitteeRootByPeriod(uint256 _period) external payable returns (bytes32);
+    function syncCommitteeRootToPoseidon(bytes32 _root) external payable returns (bytes32);
 
     /// @notice MODIFIED: removed `view` from the function signature to allow payment
     function executionStateRoot(uint64 slot) external payable returns (bytes32);
