@@ -52,39 +52,6 @@ def load_contract_address():
     return None
 
 
-def run_script(script_path):
-    """Runs a given bash script and returns its output."""
-    if not os.path.isfile(script_path):
-        print(f"❌ Script not found: {script_path}")
-        return
-    try:
-        result = subprocess.run(["bash", script_path], check=True)
-        print("✅ Script executed successfully.")
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Script failed: {e}")
-
-
-def fetch_and_prepare_block_header_json():
-    """Fetches the latest block header and writes it to a JSON file."""
-    url = f"{BEACON_API_URL}/eth/v1/beacon/headers/head"
-    print(f"📡 Fetching data from {url}")
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        header = data.get("data", {}).get("header", {}).get("message", {})
-
-        if not header:
-            print("❌ Header data not found in API response.")
-            return
-
-        with open(JSON_OUTPUT_FILE, "w") as f:
-            json.dump(header, f, indent=4)
-
-        print(f"✅ Header data saved to {JSON_OUTPUT_FILE}")
-    except requests.RequestException as e:
-        print(f"❌ Error fetching header data: {e}")
-
 def get_eth_balance(address):
     """Gets and prints the ETH balance of a given address."""
 
@@ -447,9 +414,8 @@ def get_execution_state_root(slot: int):
 # === MAIN ===
 
 def main():
-    parser = argparse.ArgumentParser(description="zkBridge Proof Submission CLI")
+    parser = argparse.ArgumentParser(description="zkBridge CLI")
     parser.add_argument("-s", "--submit", help='Run submission scripts: "header" or "sync"', choices=["header", "sync"])
-    parser.add_argument("--prepare-json", action="store_true", help="Fetch block header and write input JSON")
     parser.add_argument("-b", "--balance", nargs="?", const=acct.address, type=str, help="Check ETH balance of an address (defaults to your account)")
     
     parser.add_argument("--join-relayer", action="store_true", help="Join the relayer network")
@@ -467,8 +433,6 @@ def main():
         call_update_header()
     elif args.submit == "sync":
         call_update_sync_committee()
-    elif args.prepare_json:
-        fetch_and_prepare_block_header_json()
     elif args.balance:
         get_eth_balance(args.balance)
     elif args.get_sync_root:
