@@ -236,6 +236,7 @@ rule withdrawUnitTest(){
 rule exitRelayerNetworkUnitTest(){
     env e;
     setup(e);
+    requireInvariant noDuplicatesInWhitelist();
 
     mathint relayer_balance_before = nativeBalances[e.msg.sender];
     mathint relayer_collateral_before = currentContract.relayerToBalance[e.msg.sender];
@@ -248,6 +249,8 @@ rule exitRelayerNetworkUnitTest(){
         "Relayer's collateral balance must be 0 after exiting the network";
 
     // TODO: check that the relayer is removed from the whitelist array, but it is needed to add that there are no duplicates in the whitelist array
+    assert !(exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == e.msg.sender)),
+        "Relayer must be removed from the whitelist array";
 }
 
 
@@ -447,6 +450,7 @@ rule onlyProposerModifierPenalizationUnitTest(method f) filtered {
     assert (proposer_before_collateral > BRIDGE_TIMESLOT_PENALTY()) => currentContract.relayerToBalance[proposer_before] == 
         proposer_before_collateral - BRIDGE_TIMESLOT_PENALTY(),
         "If the proposer was penalized and not removed from the whitelist, then its balance must be decreased by the penalty";
+    
 }
 
 
@@ -581,4 +585,24 @@ rule eachMethodMustHaveNonRevertedPath(method f) {
 
     satisfy !lastReverted,
         "all methods must have non-reverted path";    
+}
+
+// nativeCodesize is not in official docs, but is in their github: https://github.com/Certora/Examples/tree/master/CVLByExample/NativeCodeSize
+rule removeRelayerFromWhitelistLivenessTest() {
+    env e;    
+    setup(e);
+    
+    require e.msg.value == 0;
+    require e.msg.sender != currentContract.currentProposer ||
+            currentContract.whitelistArray.length == 1;
+    require currentContract.relayerToBalance[e.msg.sender] > 0;
+    require currentContract._status == 1;
+    require currentContract.relayerToBalance[e.msg.sender] + nativeBalances[e.msg.sender] <= max_uint256;
+    require nativeBalances[currentContract] >= currentContract.relayerToBalance[e.msg.sender];
+    require nativeCodesize[e.msg.sender] == 0;
+
+    exitRelayerNetwork@withrevert(e);
+ 
+    assert !lastReverted,
+        "exitRelayerNetwork() must not revert";
 }
