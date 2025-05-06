@@ -5,8 +5,6 @@ methods
 {
     // When a function is not using the environment (e.g., `msg.sender`), it can be
     // declared as `envfree`
-    // function joinRelayerNetwork(address) external payable;
-    // function allowance(address,address) external returns(uint) envfree;
     function COLLATERAL() external returns (uint256) envfree;
     function BRIDGE_BLOCK_PROPOSAL_TIMESLOT() external returns (uint256) envfree;
     function SYNC_COMMITTEE_ROOT_PRICE() external returns (uint256) envfree;
@@ -30,7 +28,7 @@ function setup(env e){
     require e.msg.sender != currentContract;
     require e.msg.sender != 0;
     require currentContract.whitelistArray.length < max_uint256;
-    require COLLATERAL() > 0; // important to use later, because if collateral is 0, then the relayer can add itself multiple times to increase the chance to be selected
+    require COLLATERAL() > 0; // if collateral is 0, then the relayer can add itself multiple times to increase the chance to be selected
 }
 
 // parametric rule
@@ -101,7 +99,6 @@ invariant totalCollateralEqualsContractBalance()
         }
     }
 
-// the problem is that it just needs to be sure that there are no 2 the same addresses in the whitelist
 invariant zeroAddressCanNotBeInWhitelist()
     forall uint256 index. (index < currentContract.whitelistArray.length => currentContract.whitelistArray[index] != 0)
     {
@@ -161,23 +158,19 @@ invariant noDuplicatesInWhitelist()
         }
     }
 
-// double polarity issue is there is <=> therefore we splitted this invariant into two
+// double polarity issue is there is <=> therefore we split this invariant into two
 invariant thereIsACollateralIfIsInWhitelist(address relayer) 
     (exists uint256 index. index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == relayer) => currentContract.relayerToBalance[relayer] > 0
     {
-        // we make an assumption that the function caller is never the contract itself, because otherwise it would not change the contract balance
         preserved with (env e){ 
             setup(e);
             requireInvariant noDuplicatesInWhitelist();
         }
     }
 
-// the problem is that 
-// is not true, because the relayer has the balance 
 invariant isInTheWhiteListIfHasCollateral(address relayer) 
     currentContract.relayerToBalance[relayer] > 0 => (exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == relayer))
     {
-        // we make an assumption that the function caller is never the contract itself, because otherwise it would not change the contract balance
         preserved with (env e){ 
             setup(e);
         }
@@ -248,7 +241,7 @@ rule exitRelayerNetworkUnitTest(){
     assert currentContract.relayerToBalance[e.msg.sender] == 0,
         "Relayer's collateral balance must be 0 after exiting the network";
 
-    // TODO: check that the relayer is removed from the whitelist array, but it is needed to add that there are no duplicates in the whitelist array
+    // check that the relayer is removed from the whitelist array, we need to use noDuplicatesInWhitelist invariant for this
     assert !(exists uint256 index. (index < currentContract.whitelistArray.length && currentContract.whitelistArray[index] == e.msg.sender)),
         "Relayer must be removed from the whitelist array";
 }

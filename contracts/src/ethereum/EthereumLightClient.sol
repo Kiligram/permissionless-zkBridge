@@ -42,8 +42,8 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     uint256 public constant COLLATERAL = 2 ether;
     uint256 public constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
     uint256 public constant BRIDGE_TIMESLOT_PENALTY = 0.2 ether; // 0.2 ether = 10% penalty
-    uint256 public constant EXECUTION_STATE_ROOT_PRICE = 0.01 ether;
-    uint256 public constant SYNC_COMMITTEE_ROOT_PRICE = 0.01 ether;
+    uint256 public constant EXECUTION_STATE_ROOT_PRICE = 0.05 ether;
+    uint256 public constant SYNC_COMMITTEE_ROOT_PRICE = 0.05 ether;
 
     // mapping(address => bool) public whitelistMapping;
     mapping(address => uint256) public relayerToBalance;
@@ -101,9 +101,9 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         return uint256(
                 keccak256(
                     abi.encodePacked(
-                        blockhash(block.number - 1),    // Previous block hash
-                        headSlot,                       // Latest finalized slot
-                        address(this).balance,          // Contract balance is changed often
+                        _executionStateRoots[headSlot],    // latest state root
+                        headSlot,                          // latest slot
+                        _syncCommitteeRootByPeriod[latestSyncCommitteePeriod], // latest sync committee root
                         currentProposer
                     )
                 )
