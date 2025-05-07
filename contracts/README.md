@@ -67,14 +67,3 @@ $ forge test
 # Format
 $ forge fmt
 ```
-
-### Deploy
-1. Create a `.env` file, and write down your private key and etherscan api key.
-    ```shell
-    $ cp .env.example .env
-    $ vim .env
-    ```
-2. Execute deploy cmd.
-    ```shell
-    $ forge script script/EthereumLightClient.s.sol:DeployLightClient --rpc-url <your_rpc_url> --private-key <your_private_key>
-    ```

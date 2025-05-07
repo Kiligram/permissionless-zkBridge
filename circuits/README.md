@@ -90,31 +90,3 @@ Testing the circuit program is indeed a resource-intensive task, requiring subst
 | Constraints        | 27M          | 68M                 |
 | Witness Generation | 124 Seconds  | 180 Seconds         |
 | Proving Time       | 118 Seconds  | 60 Seconds          |
-
-
-
-
-## Build circuits
-1. Update submodules
-    ```bash
-    git submodule init
-    git submodule update
-    ```
-
-1. Install dependencies
-    ```bash
-    npm install
-    ```
-
-2. Build circuit `verify_header`
-    ```bash
-    cd verify_header
-    SLOT=6154570 bash run.sh
-    ```
-    > Notice that, you have to use the patched node instead of regular node, to install the patched node please check [here](./docs/installation-for-patched-node.md).
-
-1. Build circuit `verify_syncCommittee`
-    ```bash
-    cd verify_syncCommittee
-    PERIOD=727 bash run.sh
-    ```

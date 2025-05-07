@@ -1,4 +1,4 @@
-# Tusima zkBridge with incentive mechanism and CLI
+# Tusima zkBridge with incentive mechanism, CLI & Certora formal verification
 
 
 For more information about Tusima zkBridge refer  [here](https://tusima.gitbook.io/zkbridge/) and to [original README](./README_tusima_original.md).
@@ -95,6 +95,7 @@ npm install --unsafe-perm
 
 4. Download ptau file (144GB)
 ```bash
+cd ~/permissionless-zkBridge/auxiliary
 wget https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_27.ptau
 ```
 
