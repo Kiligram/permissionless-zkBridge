@@ -18,3 +18,5 @@ docs/
 # .env
 
 .certora_internal/
+
+collect.json
