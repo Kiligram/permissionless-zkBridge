@@ -11,8 +11,6 @@ from eth_abi.abi import decode as decode_abi
 from eth_utils import remove_0x_prefix
 
 # === CONFIGURATION ===
-HEADER_SCRIPT_PATH = "./circuits/verify_header/run.sh"
-SYNC_SCRIPT_PATH = "./circuits/verify_syncCommittee/run.sh"
 BEACON_API_URL = "http://testing.mainnet.beacon-api.nimbus.team"
 JSON_OUTPUT_FILE = "input_data.json"
 RPC_URL = "http://127.0.0.1:8545"  # Local Anvil by default
@@ -20,7 +18,9 @@ ABI_PATH = "./contracts/out/EthereumLightClient.sol/EthereumLightClient.json"
 # CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
 BROADCAST_PATH = "./contracts/broadcast/EthereumLightClient.s.sol/31337/run-latest.json"
 # this CLI is only for testing purposes, so use a testnet address
+
 PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+
 GAS_BUFFER_MULTIPLIER = 1.2
 
 web3 = Web3(Web3.HTTPProvider(RPC_URL))
@@ -72,36 +72,6 @@ def load_contract(web3, abi_path, address):
 
 contract = load_contract(web3, ABI_PATH, load_contract_address())
 
-
-# === CALL FUNCTION ===
-def get_sync_committee_root_by_period(period: int):
-    """Calls the syncCommitteeRootByPeriod function in the smart contract."""
-    try:
-        # Fetch the required fee
-        sync_committee_root_price = contract.functions.SYNC_COMMITTEE_ROOT_PRICE().call()
-
-        # Estimate gas
-        estimated_gas = contract.functions.syncCommitteeRootByPeriod(period).estimate_gas({
-            "from": acct.address,
-            "value": sync_committee_root_price,
-        })
-        gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
-
-        # Build the transaction
-        nonce = web3.eth.get_transaction_count(acct.address)
-        tx = contract.functions.syncCommitteeRootByPeriod(period).build_transaction({
-            "chainId": web3.eth.chain_id,
-            "gas": gas_limit,
-            "gasPrice": web3.eth.gas_price,
-            "nonce": nonce,
-            "value": sync_committee_root_price,  # Send the required fee
-        })
-
-        # Send the transaction
-        result = send_tx(web3, tx, estimated_gas)
-        print(f"✅ Sync Committee Root for period {period}: 0x{result.hex()}")
-    except Exception as e:
-        print(f"❌ Failed to call syncCommitteeRootByPeriod: {e}")
 
 
 def decode_revert_reason(debug_trace_response):
@@ -159,10 +129,28 @@ def parse_header_update(data):
     return header_update
 
 
-def call_update_header():
-    # Load input data
-    with open("./contracts/test/data/lightClientUpdate/goerli/5097760.json", "r") as f:
-        data = json.load(f)
+def load_json(path: str):
+    """
+    Loads a JSON file from the given path and returns its content as a dictionary.
+
+    Args:
+        path (str): The file path to the JSON file.
+
+    Returns:
+        dict or None: Parsed JSON data if successful, None otherwise.
+    """
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"❌ Error: File '{path}' not found.")
+    except json.JSONDecodeError as e:
+        print(f"❌ Error: Failed to parse JSON file '{path}': {e}")
+    exit(1)
+
+
+def call_update_header(slot: str):
+    data = load_json(f"./test_data/header/{slot}.json")
 
     header_update = parse_header_update(data)
 
@@ -184,10 +172,8 @@ def call_update_header():
     send_tx(web3, tx, estimated_gas)
 
 
-def call_update_sync_committee():
-    # Load input data
-    with open("./contracts/test/data/ssz2Poseidon/goerli/5097760.json", "r") as f:
-        data = json.load(f)
+def call_update_sync_committee(slot: str):
+    data = load_json(f"./test_data/syncCommittee/{slot}.json")
 
     header_update = parse_header_update(data)
     next_sync_committee_poseidon = Web3.to_bytes(hexstr=data["nextSyncCommitteePoseidon"])
@@ -220,7 +206,7 @@ def call_update_sync_committee():
     send_tx(web3, tx, estimated_gas)
 
 
-def send_tx(web3, tx, estimated_gas):
+def send_tx(web3, tx, estimated_gas, get_return_value=False):
     # Get balance before transaction
     balance_before = web3.eth.get_balance(acct.address)
 
@@ -247,14 +233,21 @@ def send_tx(web3, tx, estimated_gas):
 
     if receipt.status == 1:
         print("✅ Transaction succeeded!")
-        try:
-            # Attempt to fetch the return value of the called function
-            return_value = web3.eth.call(tx, block_identifier=receipt.blockNumber)
-            if return_value:
-                # print(f"🔄 Return value: {return_value}")
-                return return_value
-        except Exception as e:
-            return True
+        if get_return_value:
+            try:
+                # Attempt to fetch the return value of the called function
+                call_tx = {
+                    "to": tx["to"],
+                    "from": acct.address,  # must include
+                    "data": tx["data"],  # contract method calldata
+                    "value": tx.get("value", 0)  # optional if not payable
+                }
+                return_value = web3.eth.call(call_tx, block_identifier=receipt.blockNumber)
+                if return_value:
+                    return return_value
+            except Exception as e:
+                print(f"⚠️ Failed to fetch return value: {e}")
+                return False
         return True
     else:
         print("❌ Transaction reverted.")
@@ -289,9 +282,6 @@ def call_join_relayer_network():
     # Send the transaction
     if send_tx(web3, tx, estimated_gas):
         print(f"✅ Joined relayer {acct.address}")
-
-
-
 
 
 def call_exit_relayer_network():
@@ -349,90 +339,119 @@ def get_current_proposer():
         return None
 
 
+def get_sync_committee_root_by_period(period: int):
+    """Calls the syncCommitteeRootByPeriod function in the smart contract."""
+    # Fetch the required fee
+    sync_committee_root_price = contract.functions.SYNC_COMMITTEE_ROOT_PRICE().call()
+
+    # Estimate gas
+    estimated_gas = contract.functions.syncCommitteeRootByPeriod(period).estimate_gas({
+        "from": acct.address,
+        "value": sync_committee_root_price,
+    })
+    gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
+
+    # Build the transaction
+    nonce = web3.eth.get_transaction_count(acct.address)
+    tx = contract.functions.syncCommitteeRootByPeriod(period).build_transaction({
+        "chainId": web3.eth.chain_id,
+        "gas": gas_limit,
+        "gasPrice": web3.eth.gas_price,
+        "nonce": nonce,
+        "value": sync_committee_root_price,  # Send the required fee
+    })
+
+    # Send the transaction
+    result = send_tx(web3, tx, estimated_gas, get_return_value=True)
+    if result:
+        print(f"✅ Sync Committee Root for period {period}: 0x{result.hex()}")
+    else:
+        print(f"❌ Failed to call fetch the return value")
+
+
 def get_sync_committee_root_to_poseidon(root: str):
     """Calls the syncCommitteeRootToPoseidon function in the smart contract and prints the result."""
-    try:
-        # Fetch the required fee
-        sync_committee_root_price = contract.functions.SYNC_COMMITTEE_ROOT_PRICE().call()
+    # Fetch the required fee
+    sync_committee_root_price = contract.functions.SYNC_COMMITTEE_ROOT_PRICE().call()
 
-        # Estimate gas
-        estimated_gas = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).estimate_gas({
-            "from": acct.address,
-            "value": sync_committee_root_price,
-        })
-        gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
+    # Estimate gas
+    estimated_gas = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).estimate_gas({
+        "from": acct.address,
+        "value": sync_committee_root_price,
+    })
+    gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
 
-        # Build the transaction
-        nonce = web3.eth.get_transaction_count(acct.address)
-        tx = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).build_transaction({
-            "chainId": web3.eth.chain_id,
-            "gas": gas_limit,
-            "gasPrice": web3.eth.gas_price,
-            "nonce": nonce,
-            "value": sync_committee_root_price,  # Send the required fee
-        })
+    # Build the transaction
+    nonce = web3.eth.get_transaction_count(acct.address)
+    tx = contract.functions.syncCommitteeRootToPoseidon(Web3.to_bytes(hexstr=root)).build_transaction({
+        "chainId": web3.eth.chain_id,
+        "gas": gas_limit,
+        "gasPrice": web3.eth.gas_price,
+        "nonce": nonce,
+        "value": sync_committee_root_price,  # Send the required fee
+    })
 
-        # Send the transaction
-        result = send_tx(web3, tx, estimated_gas)
-
+    # Send the transaction
+    result = send_tx(web3, tx, estimated_gas, get_return_value=True)
+    if result:
         print(f"✅ Sync Committee Root to Poseidon for root {root}: 0x{result.hex()}")
-    except Exception as e:
-        print(f"❌ Failed to call syncCommitteeRootToPoseidon: {e}")
-
+    else:
+        print(f"❌ Failed to call fetch the return value")
 
 def get_execution_state_root(slot: int):
     """Calls the executionStateRoot function in the smart contract and prints the result."""
-    try:
-        # Fetch the required fee
-        execution_state_root_price = contract.functions.EXECUTION_STATE_ROOT_PRICE().call()
 
-        # Estimate gas
-        estimated_gas = contract.functions.executionStateRoot(slot).estimate_gas({
-            "from": acct.address,
-            "value": execution_state_root_price,
-        })
-        gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
+    # Fetch the required fee
+    execution_state_root_price = contract.functions.EXECUTION_STATE_ROOT_PRICE().call()
 
-        # Build the transaction
-        nonce = web3.eth.get_transaction_count(acct.address)
-        tx = contract.functions.executionStateRoot(slot).build_transaction({
-            "chainId": web3.eth.chain_id,
-            "gas": gas_limit,
-            "gasPrice": web3.eth.gas_price,
-            "nonce": nonce,
-            "value": execution_state_root_price,  # Send the required fee
-        })
+    # Estimate gas
+    estimated_gas = contract.functions.executionStateRoot(slot).estimate_gas({
+        "from": acct.address,
+        "value": execution_state_root_price,
+    })
+    gas_limit = int(estimated_gas * GAS_BUFFER_MULTIPLIER)
 
-        # Send the transaction
-        result = send_tx(web3, tx, estimated_gas)
+    # Build the transaction
+    nonce = web3.eth.get_transaction_count(acct.address)
+    tx = contract.functions.executionStateRoot(slot).build_transaction({
+        "chainId": web3.eth.chain_id,
+        "gas": gas_limit,
+        "gasPrice": web3.eth.gas_price,
+        "nonce": nonce,
+        "value": execution_state_root_price,  # Send the required fee
+    })
 
+    # Send the transaction
+    result = send_tx(web3, tx, estimated_gas, get_return_value=True)
+    if result:
         print(f"✅ Execution State Root for slot {slot}: 0x{result.hex()}")
-    except Exception as e:
-        print(f"❌ Failed to call executionStateRoot: {e}")
+    else:
+        print(f"❌ Failed to call fetch the return value")
 
 
 # === MAIN ===
 
 def main():
     parser = argparse.ArgumentParser(description="zkBridge CLI")
-    parser.add_argument("-s", "--submit", help='Run submission scripts: "header" or "sync"', choices=["header", "sync"])
-    parser.add_argument("-b", "--balance", nargs="?", const=acct.address, type=str, help="Check ETH balance of an address (defaults to your account)")
+    parser.add_argument("--submit-header", type=str, metavar="SLOT", help='Submit a header update, for testing purposes there are the following pre-prepared slots: 7295584, 7295904, 7297568, 7299712, 7299968. Submit these slots in this order, otherwise it will revert, what is expected behavior. If you get a sync committee error, you need to submit the new sync committee for new period. This will happen right after 7297568 slot.') 
+    parser.add_argument("--submit-sync", type=str, metavar="SLOT", help='Submit sync committee update, for testing purposes there is the following pre-prepared slot: 7298976')
+    parser.add_argument("-b", "--balance", nargs="?", const=acct.address, type=str, metavar="ADDRESS", help="Check ETH balance of an address (defaults to your account)")
     
     parser.add_argument("--join-relayer", action="store_true", help="Join the relayer network")
     parser.add_argument("--exit-relayer", action="store_true", help="Exit the relayer network")
     parser.add_argument("--withdraw-incentive", action="store_true", help="Withdraw incentive from the contract")
 
     parser.add_argument("--get-proposer", action="store_true", help="Get the current proposer")
-    parser.add_argument("--get-sync-root", type=int, metavar="PERIOD", help="Call syncCommitteeRootByPeriod(period)")
-    parser.add_argument("--sync-root-to-poseidon", type=str, metavar="ROOT", help="Call syncCommitteeRootToPoseidon(root)")
+    parser.add_argument("--get-sync-root", type=int, metavar="PERIOD", help="Purchase the root for a given period.")
+    parser.add_argument("--sync-root-to-poseidon", type=str, metavar="ROOT", help="Purchase the sync committee root calculated with Poseidon hash.")
     parser.add_argument("--execution-state-root", type=int, metavar="SLOT", help="Call executionStateRoot(slot)")
 
     args = parser.parse_args()
 
-    if args.submit == "header":
-        call_update_header()
-    elif args.submit == "sync":
-        call_update_sync_committee()
+    if args.submit_header:
+        call_update_header(args.submit_header)
+    elif args.submit_sync:
+        call_update_sync_committee(args.submit_sync)
     elif args.balance:
         get_eth_balance(args.balance)
     elif args.get_sync_root:
