@@ -2,7 +2,6 @@ pragma solidity 0.8.29;
 pragma experimental ABIEncoderV2;
 
 import "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-// import "openzeppelin-contracts/contracts/access/Ownable.sol";
 import "./libraries/HeaderBLSVerifier.sol";
 import "./libraries/SyncCommitteeRootToPoseidonVerifier.sol";
 import "./libraries/SimpleSerialize.sol";
@@ -34,7 +33,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     uint256 public immutable GENESIS_TIME;
     uint256 public immutable SECONDS_PER_SLOT;
 
-    // -------------- MY CHANGES ----------------
+    // -------------- Incentive mechanism by Andrii Rybak ----------------
     address public currentProposer;
     uint256 public currentProposerExpiration;
 
@@ -45,7 +44,6 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     uint256 public constant EXECUTION_STATE_ROOT_PRICE = 0.05 ether;
     uint256 public constant SYNC_COMMITTEE_ROOT_PRICE = 0.05 ether;
 
-    // mapping(address => bool) public whitelistMapping;
     mapping(address => uint256) public relayerToBalance;
     mapping(uint64 => address) public slotToSubmitter;
     mapping(uint256 => address) public periodToSubmitter;
@@ -136,13 +134,11 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
                 // if remaining COLLATERAL is less than penalty, remove the relayer from whitelist for being inactive
                 _removeRelayerFromWhitelist(currentProposer);
                 _distributeIncentive(msg.sender, relayerToBalance[currentProposer]);
-                // relayerToBalance[msg.sender] += relayerToBalance[currentProposer];
                 relayerToBalance[currentProposer] = 0;
             }
             else {
                 relayerToBalance[currentProposer] -= BRIDGE_TIMESLOT_PENALTY;
                 _distributeIncentive(msg.sender, BRIDGE_TIMESLOT_PENALTY);
-                // relayerToBalance[msg.sender] += BRIDGE_TIMESLOT_PENALTY;
             }
         }
 
@@ -204,7 +200,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
         _updateHeader(update);
     }
 
-    /// @notice MODIFIED: Added modifier, added syncCommitteeRootToSubmitter and periodToSubmitter mapping
+    /// @notice MODIFIED: Added modifier, added _syncCommitteeRootToSubmitter and periodToSubmitter mapping
     /// @notice Update the sync committee, it contains two updates actually: 
     ///         1. syncCommitteePoseidon
     ///         2. a header
@@ -421,6 +417,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
 
 
     /**
+     * [Author] Andrii Rybak   
      * @dev Internal function to distribute incentives to a relayer. 
      *      This function manages the relayer's balance and incentive amounts.
      *      If the relayer's balance exceeds the predefined collateral limit, 

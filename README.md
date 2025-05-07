@@ -105,7 +105,6 @@ wget https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_27.ptau
 cd ~/permissionless-zkBridge
 export CERTORAKEY=<YOUR_CERTORA_KEY>
 sudo apt install openjdk-11-jre-headless
-pip3 install solc-select
 solc-select install 0.8.29
 solc-select use 0.8.29
 ```
@@ -118,7 +117,7 @@ solc-select use 0.8.29
 
 1. In order to submit the block header or sync committee you have to fetch the data from the Ethereum beacon node, preprocess them and save in the JSON format. 
 
-2. Modify the `./circuits/verify_header/run.sh` accordingly and run them:
+2. Modify the `./circuits/verify_header/run.sh` accordingly and run it:
 
 ```bash
 cd ~/permissionless-zkBridge/circuits/verify_header
