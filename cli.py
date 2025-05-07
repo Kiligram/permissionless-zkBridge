@@ -443,8 +443,8 @@ def main():
 
     parser.add_argument("--get-proposer", action="store_true", help="Get the current proposer")
     parser.add_argument("--get-sync-root", type=int, metavar="PERIOD", help="Purchase the root for a given period.")
-    parser.add_argument("--sync-root-to-poseidon", type=str, metavar="ROOT", help="Purchase the sync committee root calculated with Poseidon hash.")
-    parser.add_argument("--execution-state-root", type=int, metavar="SLOT", help="Call executionStateRoot(slot)")
+    parser.add_argument("--sync-root-to-poseidon", type=str, metavar="ROOT", help="Purchase the sync committee root calculated with Poseidon hash corresponding to the given sync committee root.")
+    parser.add_argument("--execution-state-root", type=int, metavar="SLOT", help="Purchase the execution state root for a given slot.")
 
     args = parser.parse_args()
 

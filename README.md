@@ -156,17 +156,17 @@ python3 ./cli.py --help
 ```
 
 ```
-usage: cli.py [-h] [--submit-header SLOT] [--submit-sync SLOT] [-b [ADDRESS]] [--join-relayer] [--exit-relayer] [--withdraw-incentive]   
+usage: cli.py [-h] [--submit-header SLOT] [--submit-sync SLOT] [-b [ADDRESS]] [--join-relayer] [--exit-relayer] [--withdraw-incentive]       
               [--get-proposer] [--get-sync-root PERIOD] [--sync-root-to-poseidon ROOT] [--execution-state-root SLOT]
 
 zkBridge CLI
 
 options:
   -h, --help            show this help message and exit
-  --submit-header SLOT  Submit a header update, for testing purposes there are the following pre-prepared slots: 7295584, 7295904,       
-                        7297568, 7299712, 7299968. Submit these slots in this order, otherwise it will revert, what is expected behavior.
-                        If you get a sync committee error, you need to submit the new sync committee for new period. This will happen    
-                        right after 7297568 slot.
+  --submit-header SLOT  Submit a header update, for testing purposes there are the following pre-prepared slots: 7295584, 7295904, 7297568,  
+                        7299712, 7299968. Submit these slots in this order, otherwise it will revert, what is expected behavior. If you get a
+                        sync committee error, you need to submit the new sync committee for new period. This will happen right after 7297568 
+                        slot.
   --submit-sync SLOT    Submit sync committee update, for testing purposes there is the following pre-prepared slot: 7298976
   -b [ADDRESS], --balance [ADDRESS]
                         Check ETH balance of an address (defaults to your account)
@@ -177,9 +177,9 @@ options:
   --get-sync-root PERIOD
                         Purchase the root for a given period.
   --sync-root-to-poseidon ROOT
-                        Purchase the sync committee root calculated with Poseidon hash.
+                        Purchase the sync committee root calculated with Poseidon hash corresponding to the given sync committee root.
   --execution-state-root SLOT
-                        Call executionStateRoot(slot)
+                        Purchase the execution state root for a given slot.
 ```
 
 ### 3. Formal verification with Certora (optional)
