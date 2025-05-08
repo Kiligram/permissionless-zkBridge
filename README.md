@@ -7,18 +7,23 @@ This repository is composed of three main parts, [contracts](./contracts/README.
 
 ```
 .
-├── auxiliary
-├── circuits
-├── contracts
-│   ├── src
-│   │   └── ethereum
+├── auxiliary/
+├── circuits/
+│   ├── verify_header/
+│   └── verify_syncCommittee/
+├── contracts/
+│   ├── src/
+│   │   └── ethereum/
 │   │       └── EthereumLightClient.sol
-│   ├── certora
-│   │   └── specs
+│   ├── certora/
+│   │   ├── mutants/
+│   │   └── specs/
 │   │       └── EthereumLightClient.spec
 │   ├── .env
 │   └── EthereumLightClient.conf
-└── cli.py
+├── test_data/
+├── cli.py
+└── requirements.txt
 ```
 # Requirements & dependencies
 If you only want to test the whole solution as a concept, you do not needed to run the circuits nor certora prover. For testing purposes we already pre-prepared the data and proofs. You can find them in the `./test_data` directory.
@@ -27,7 +32,7 @@ If you only want to test the whole solution as a concept, you do not needed to r
 - 4 core CPU, 16GB RAM and 20GB free disk space (if running without circuits, for testing purposes)
 
 ## Pre-requisites
-- `Python >= v3.8.16`
+- `Python 3.12.3`
 
 ## Contracts: dependencies
 1. Install submodules:
