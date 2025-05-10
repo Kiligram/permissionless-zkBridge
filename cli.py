@@ -1,24 +1,17 @@
 import argparse
-import subprocess
-import requests
 import json
-import os
-from datetime import datetime
 from web3 import Web3
 from eth_account import Account
-from web3.exceptions import ContractLogicError
 from eth_abi.abi import decode as decode_abi
 from eth_utils import remove_0x_prefix
 
 # === CONFIGURATION ===
-BEACON_API_URL = "http://testing.mainnet.beacon-api.nimbus.team"
-JSON_OUTPUT_FILE = "input_data.json"
 RPC_URL = "http://127.0.0.1:8545"  # Local Anvil by default
 ABI_PATH = "./contracts/out/EthereumLightClient.sol/EthereumLightClient.json"
-# CONTRACT_ADDRESS = "0x5fbdb2315678afecb367f032d93f642f64180aa3"
 BROADCAST_PATH = "./contracts/broadcast/EthereumLightClient.s.sol/31337/run-latest.json"
-# this CLI is only for testing purposes, so use a testnet address
 
+# use 'cast rpc evm_mine' to mine a block in anvil if needed to test the inactivity of relayer
+# this CLI is only for testing purposes, so use a testnet address
 PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
 GAS_BUFFER_MULTIPLIER = 1.2
