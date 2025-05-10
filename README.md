@@ -28,7 +28,7 @@ This repository is composed of three main parts, [contracts](./contracts/README.
 # Requirements & dependencies
 If you only want to test the whole solution as a concept, you do not needed to run the circuits nor certora prover. For testing purposes we already pre-prepared the data and proofs. You can find them in the `./test_data` directory.
 ## Requirements
-- 32 core CPU, 256GB RAM and 500GB free space (if running the circuits)
+- 32 core CPU, 256GB RAM and 1000GB free space (if running the circuits)
 - 4 core CPU, 16GB RAM and 20GB free disk space (if running without circuits, for testing purposes)
 
 ## Pre-requisites
@@ -141,7 +141,7 @@ PERIOD=<PERIOD_FOR_WHICH_YOU_PREPARED_DATA> bash run.sh
 
 2. In a separate terminal start the local Ethereum node if you want to deploy the contract locally. We recommend using Anvil, which goes with Foundry:
 ```bash
-anvil --code-size-limit 999999
+anvil
 ```
 
 3. Deploy the smart contract. In this command there is used anvil as a local Ethereum node. You can also use any other EVM compatible RPC node and private key.
