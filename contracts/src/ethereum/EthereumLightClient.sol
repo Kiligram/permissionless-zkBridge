@@ -40,7 +40,7 @@ contract EthereumLightClient is ILightClientGetter, ILightClientSetter, Reentran
     // incentive settings (this version is only for testing purposes, see the thesis for instructions how to set them)
     uint256 public constant COLLATERAL = 1 ether;
     uint256 public constant BRIDGE_BLOCK_PROPOSAL_TIMESLOT = 2 minutes;
-    uint256 public constant BRIDGE_TIMESLOT_PENALTY = 0.1 ether; // = 10% from penalty
+    uint256 public constant BRIDGE_TIMESLOT_PENALTY = 0.1 ether; // = 10% from COLLATERAL
     uint256 public constant EXECUTION_STATE_ROOT_PRICE = 0.05 ether;
     uint256 public constant SYNC_COMMITTEE_ROOT_PRICE = 0.05 ether;
 
