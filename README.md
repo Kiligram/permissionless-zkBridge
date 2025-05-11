@@ -154,7 +154,9 @@ forge script script/EthereumLightClient.s.sol:DeployLightClient \
     --broadcast
 ```
 
-4. Now you can run the CLI and interact with the contract.
+4. The CLI is configured to use Anvil by default. To use an already deployed contract on one of the available testnets, simply uncomment the corresponding `RPC_URL` and `CONTRACT_ADDRESS` lines in the `./cli.py` file. Additionally, you will need to set the `PRIVATE_KEY` to the private key of your wallet on the selected testnet.
+
+5. Now you can run the CLI and interact with the contract.
 ```bash
 cd ~/permissionless-zkBridge
 python3 ./cli.py --help
