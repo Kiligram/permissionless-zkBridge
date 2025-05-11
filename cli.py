@@ -6,14 +6,27 @@ from eth_abi.abi import decode as decode_abi
 from eth_utils import remove_0x_prefix
 
 # === CONFIGURATION ===
-RPC_URL = "http://127.0.0.1:8545"  # Local Anvil by default
-ABI_PATH = "./contracts/out/EthereumLightClient.sol/EthereumLightClient.json"
-BROADCAST_PATH = "./contracts/broadcast/EthereumLightClient.s.sol/31337/run-latest.json"
+RPC_URL = "http://127.0.0.1:8545"                                   # Local Anvil by default
+
+# RPC_URL = "https://alfajores-forno.celo-testnet.org"              # Celo Alfajores Testnet
+# CONTRACT_ADDRESS = "0xc7967a967793e9E043d7c37B085B426B4b74EC61"   # Celo Alfajores Testnet
+
+# RPC_URL = "https://eth-sepolia.public.blastapi.io"                # Sepolia
+# CONTRACT_ADDRESS = "0xc7967a967793e9E043d7c37B085B426B4b74EC61"   # Sepolia 
+
+# RPC_URL = "https://rpc.cardona.zkevm-rpc.com"                     # Polygon zkEVM Cardona Testnet
+# CONTRACT_ADDRESS = "0xc7967a967793e9E043d7c37B085B426B4b74EC61"   # Polygon zkEVM Cardona Testnet
+
+# RPC_URL = "https://rpc.api.moonbase.moonbeam.network"             # Moonbase Alpha Testnet
+# CONTRACT_ADDRESS = "0x7DB79D491459d2cB394b38963926361E0e91D5d9"   # Moonbase Alpha Testnet
 
 # use 'cast rpc evm_mine' to mine a block in anvil if needed to test the inactivity of relayer
 # this CLI is only for testing purposes, so use a testnet address
 PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
+
+ABI_PATH = "./contracts/out/EthereumLightClient.sol/EthereumLightClient.json"
+BROADCAST_PATH = "./contracts/broadcast/EthereumLightClient.s.sol/31337/run-latest.json"
 GAS_BUFFER_MULTIPLIER = 1.2
 
 web3 = Web3(Web3.HTTPProvider(RPC_URL))
@@ -222,7 +235,8 @@ def send_tx(web3, tx, estimated_gas, get_return_value=False):
 
     balance_diff = balance_after - balance_before
     sign = "+" if balance_diff >= 0 else "-"
-    print(f"💰 Balance before: {web3.from_wei(balance_before, 'ether')} ETH | After: {web3.from_wei(balance_after, 'ether')} ETH | Diff: {sign}{web3.from_wei(abs(balance_diff), 'ether')} ETH")
+    if "127.0.0.1" in RPC_URL or "localhost" in RPC_URL:
+        print(f"💰 Balance before: {web3.from_wei(balance_before, 'ether')} ETH | After: {web3.from_wei(balance_after, 'ether')} ETH | Diff: {sign}{web3.from_wei(abs(balance_diff), 'ether')} ETH")
 
     if receipt.status == 1:
         print("✅ Transaction succeeded!")
